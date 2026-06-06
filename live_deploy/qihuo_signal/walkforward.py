@@ -60,7 +60,7 @@ def run_walk_forward(
 ) -> tuple[Path, list[WalkForwardSummary]]:
     reports = Path(reports_root)
     reports.mkdir(parents=True, exist_ok=True)
-    candidates = _load_candidates(reports, store, max_per_symbol)
+    candidates = _load_candidates(reports, store, settings, max_per_symbol)
     backtester = Backtester(settings)
     events = store.read_events()
     rows: list[WalkForwardRow] = []
@@ -109,17 +109,19 @@ def run_walk_forward(
     return report_path, summaries
 
 
-def _load_candidates(reports: Path, store: LocalStore, max_per_symbol: int) -> pd.DataFrame:
+def _load_candidates(reports: Path, store: LocalStore, settings: Settings, max_per_symbol: int) -> pd.DataFrame:
     refined_path = reports / "refined_candidates.csv"
     rows: list[dict] = []
+    frames: list[pd.DataFrame] = []
     if refined_path.exists():
         frame = pd.read_csv(refined_path)
         if not frame.empty:
-            frame["rank"] = frame.groupby("symbol")["robust_score"].rank(method="first", ascending=False)
-            frame = frame[frame["rank"] <= max_per_symbol].copy()
-            return frame
+            frames.append(frame)
+    backtest_candidates = _load_backtest_candidates(store, settings)
+    if not backtest_candidates.empty:
+        frames.append(backtest_candidates)
     profiles = store.read_profiles()
-    for profile in ("refined_robust", "safe_winrate", "capital_safe", "balanced"):
+    for profile in ("walk_forward", "refined_robust", "safe_winrate", "capital_safe", "balanced"):
         for symbol, item in profiles.get(profile, {}).items():
             best = item.get("best") or {}
             params = best.get("params") or json.loads(str(best.get("params_json") or "{}"))
@@ -134,11 +136,45 @@ def _load_candidates(reports: Path, store: LocalStore, max_per_symbol: int) -> p
                     "robust_score": float(best.get("robust_score") or best.get("net_pnl") or 0.0),
                 }
             )
-    frame = pd.DataFrame(rows).drop_duplicates(subset=["symbol", "strategy_id"])
+    if rows:
+        frames.append(pd.DataFrame(rows))
+    if not frames:
+        raise RuntimeError("No refined or backtest candidates found. Run qihuo backtest --search first.")
+    frame = pd.concat(frames, ignore_index=True)
     if frame.empty:
-        raise RuntimeError("No refined candidates found. Run qihuo refine first.")
-    frame["rank"] = frame.groupby("symbol")["robust_score"].rank(method="first", ascending=False)
+        raise RuntimeError("No refined or backtest candidates found. Run qihuo backtest --search first.")
+    frame = frame.drop_duplicates(subset=["symbol", "strategy_id"])
+    frame["robust_score"] = pd.to_numeric(frame["robust_score"], errors="coerce").fillna(0.0)
+    frame["rank"] = frame.groupby(["symbol", "timeframe"])["robust_score"].rank(method="first", ascending=False)
     return frame[frame["rank"] <= max_per_symbol].copy()
+
+
+def _load_backtest_candidates(store: LocalStore, settings: Settings) -> pd.DataFrame:
+    results = store.read_backtest_results()
+    if results.empty:
+        return pd.DataFrame()
+    frame = results.copy()
+    frame["params"] = frame["params_json"].apply(json.loads)
+    frame["pattern"] = frame["params"].apply(lambda item: item.get("pattern") if isinstance(item, dict) else None)
+    frame = frame[frame["pattern"].isin({"donchian_atr", "tsmom_vol", "vol_breakout"})].copy()
+    if frame.empty:
+        return pd.DataFrame()
+    frame["overfit_flag"] = frame.get("overfit_flag", False).astype(bool)
+    for col in ["net_pnl", "test_net_pnl", "win_rate", "profit_factor", "max_drawdown", "trade_count"]:
+        frame[col] = pd.to_numeric(frame[col], errors="coerce").fillna(0.0)
+    valid = frame[(frame["net_pnl"] > 0) & (~frame["overfit_flag"]) & (frame["trade_count"] >= 3)].copy()
+    if valid.empty:
+        return pd.DataFrame()
+    valid["robust_score"] = (
+        valid["net_pnl"] * 0.3
+        + valid["test_net_pnl"] * 2.0
+        + valid["win_rate"] * settings.capital
+        + valid["profit_factor"].clip(upper=5.0) * 800.0
+        - valid["max_drawdown"].abs() * 0.8
+    )
+    valid = valid.sort_values("robust_score", ascending=False)
+    selected = valid.groupby(["symbol", "timeframe", "pattern"], sort=False).head(3)
+    return selected[["symbol", "timeframe", "strategy_id", "params_json", "robust_score"]].copy()
 
 
 def _select_for_window(

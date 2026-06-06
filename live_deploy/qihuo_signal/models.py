@@ -23,6 +23,7 @@ PatternName = Literal[
     "trend_failure",
     "donchian_atr",
     "tsmom_vol",
+    "vol_breakout",
 ]
 Side = Literal["long", "short", "both"]
 

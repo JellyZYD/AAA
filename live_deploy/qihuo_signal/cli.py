@@ -49,7 +49,15 @@ def main(argv: list[str] | None = None) -> int:
     bt_p.add_argument(
         "--pattern",
         action="append",
-        choices=["swing_reversal", "breakout", "failed_breakout", "trend_failure", "donchian_atr", "tsmom_vol"],
+        choices=[
+            "swing_reversal",
+            "breakout",
+            "failed_breakout",
+            "trend_failure",
+            "donchian_atr",
+            "tsmom_vol",
+            "vol_breakout",
+        ],
         help="Limit search to one or more strategy patterns",
     )
     bt_p.add_argument("--append", action="store_true", help="Merge new results with existing results")
@@ -58,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("analyze", help="Generate report and champion strategies")
 
     refine_p = sub.add_parser("refine", help="Run local parameter perturbation and rolling validation")
-    refine_p.add_argument("--pattern", action="append", choices=["donchian_atr", "tsmom_vol"], help="Pattern to refine")
+    refine_p.add_argument("--pattern", action="append", choices=["donchian_atr", "tsmom_vol", "vol_breakout"], help="Pattern to refine")
     refine_p.add_argument("--max-per-symbol", type=int, default=40)
     refine_p.add_argument("--rolling-windows", type=int, default=4)
     refine_p.add_argument("--top-seeds-per-symbol", type=int, default=3)
@@ -88,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
             "capital_safe",
         ],
         default="live",
-        help="Strategy profile to use for polling; live maps to safe_winrate, robust maps to refined_robust",
+        help="Strategy profile to use for polling; live maps to walk_forward when available, robust maps to refined_robust",
     )
 
     dash_p = sub.add_parser("dashboard", help="Run local FastAPI dashboard")

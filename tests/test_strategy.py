@@ -101,6 +101,25 @@ class StrategyTests(unittest.TestCase):
         actions = StrategyEngine().generate_actions(bars, params, symbol="RB")
         self.assertIn("OPEN_SHORT", [action.action for action in actions])
 
+    def test_vol_breakout_can_open_long_after_compression(self) -> None:
+        bars = bars_from_closes([100, 101, 100, 101, 100, 100, 100, 100, 100, 100, 105, 106])
+        params = StrategyParams(
+            pattern="vol_breakout",
+            side="long",
+            timeframe="15m",
+            range_lookback=5,
+            breakout_pct=0.0,
+            atr_period=3,
+            atr_mult=2.0,
+            exit_lookback=3,
+            vol_lookback=3,
+            score_threshold=1.2,
+            max_hold_bars=20,
+            risk_mode="signal",
+        )
+        actions = StrategyEngine().generate_actions(bars, params, symbol="RB")
+        self.assertIn("OPEN_LONG", [action.action for action in actions])
+
     def test_refine_perturbations_include_seed(self) -> None:
         params = StrategyParams(pattern="donchian_atr", timeframe="1d", range_lookback=16, atr_period=10, atr_mult=3.0)
         candidates = _perturb(params)

@@ -37,7 +37,7 @@ def refine_strategies(
     store: LocalStore,
     settings: Settings,
     reports_root: str | Path,
-    patterns: tuple[str, ...] = ("donchian_atr", "tsmom_vol"),
+    patterns: tuple[str, ...] = ("donchian_atr", "tsmom_vol", "vol_breakout"),
     max_per_symbol: int = 40,
     rolling_windows: int = 4,
     top_seeds_per_symbol: int = 3,
@@ -155,13 +155,15 @@ def _candidate_params_by_symbol(
 
 
 def _perturb(params: StrategyParams) -> list[StrategyParams]:
-    if params.pattern == "donchian_atr":
+    if params.pattern in {"donchian_atr", "vol_breakout"}:
         lookbacks = _near_int(params.range_lookback, [8, 16, 24, 32, 48, 64])
         breakouts = _near_float(params.breakout_pct, [0.0, 0.001, 0.0015, 0.0025, 0.003, 0.005])
         atr_periods = _near_int(params.atr_period, [10, 14, 20])
         atr_mults = _near_float(params.atr_mult, [1.8, 2.0, 2.5, 3.0, 3.5])
         exits = _near_int(params.exit_lookback, [6, 8, 12, 16, 24, 32])
         holds = _near_int(params.max_hold_bars, [24, 32, 48, 64, 96])
+        vols = _near_int(params.vol_lookback, [24, 32, 48, 64, 96])
+        thresholds = _near_float(params.score_threshold, [0.65, 0.75, 0.8, 0.9, 0.95])
         rows = []
         for lookback in lookbacks:
             for breakout in breakouts:
@@ -169,19 +171,25 @@ def _perturb(params: StrategyParams) -> list[StrategyParams]:
                     for atr_mult in atr_mults:
                         for exit_lookback in exits:
                             for max_hold in holds:
-                                rows.append(
-                                    StrategyParams(
-                                        **{
-                                            **params.to_dict(),
-                                            "range_lookback": lookback,
-                                            "breakout_pct": breakout,
-                                            "atr_period": atr_period,
-                                            "atr_mult": atr_mult,
-                                            "exit_lookback": exit_lookback,
-                                            "max_hold_bars": max_hold,
-                                        }
-                                    )
-                                )
+                                vol_values = vols if params.pattern == "vol_breakout" else [params.vol_lookback]
+                                threshold_values = thresholds if params.pattern == "vol_breakout" else [params.score_threshold]
+                                for vol_lookback in vol_values:
+                                    for threshold in threshold_values:
+                                        rows.append(
+                                            StrategyParams(
+                                                **{
+                                                    **params.to_dict(),
+                                                    "range_lookback": lookback,
+                                                    "breakout_pct": breakout,
+                                                    "atr_period": atr_period,
+                                                    "atr_mult": atr_mult,
+                                                    "exit_lookback": exit_lookback,
+                                                    "max_hold_bars": max_hold,
+                                                    "vol_lookback": vol_lookback,
+                                                    "score_threshold": threshold,
+                                                }
+                                            )
+                                        )
         return _sort_by_distance(params, rows)
     if params.pattern == "tsmom_vol":
         momentums = _near_int(params.momentum_lookback, [16, 24, 32, 48, 64, 96])

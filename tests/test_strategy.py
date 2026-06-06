@@ -5,6 +5,7 @@ import unittest
 import pandas as pd
 
 from qihuo_signal.models import StrategyParams
+from qihuo_signal.refine import _perturb
 from qihuo_signal.strategy import StrategyEngine, detect_pivots
 
 
@@ -98,6 +99,12 @@ class StrategyTests(unittest.TestCase):
         )
         actions = StrategyEngine().generate_actions(bars, params, symbol="RB")
         self.assertIn("OPEN_SHORT", [action.action for action in actions])
+
+    def test_refine_perturbations_include_seed(self) -> None:
+        params = StrategyParams(pattern="donchian_atr", timeframe="1d", range_lookback=16, atr_period=10, atr_mult=3.0)
+        candidates = _perturb(params)
+        self.assertTrue(candidates)
+        self.assertEqual(candidates[0].strategy_id, params.strategy_id)
 
 
 if __name__ == "__main__":

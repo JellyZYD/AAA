@@ -163,7 +163,9 @@ class LocalStore:
         df = pd.DataFrame(rows)
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         if path.exists():
-            df = pd.concat([pd.read_parquet(path), df], ignore_index=True)
+            old = pd.read_parquet(path)
+            if not old.empty:
+                df = pd.concat([old, df], ignore_index=True)
         df = df.drop_duplicates(subset=["symbol", "contract", "timestamp", "action", "strategy_id"], keep="last")
         df = df.sort_values("timestamp").reset_index(drop=True)
         df.to_parquet(path, index=False)

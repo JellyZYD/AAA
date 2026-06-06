@@ -100,6 +100,7 @@ class SignalPoller:
     def _load_profile(self) -> dict:
         profiles = self.store.read_profiles()
         profile = "safe_winrate" if self.profile == "live" else self.profile
+        profile = "refined_robust" if profile == "robust" else profile
         if profiles and profile in profiles:
             return profiles[profile]
         champions = self.store.read_champions()

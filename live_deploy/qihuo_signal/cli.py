@@ -13,6 +13,7 @@ from .config import load_settings, write_default_config
 from .data_sources import AkShareProvider, MissingDependencyError, SyntheticProvider
 from .events import LLMEventAnalyzer, classify_headline_frame, fetch_major_headlines, fetch_shmet_headlines, load_manual_events
 from .polling import SignalPoller
+from .refine import refine_strategies
 from .storage import LocalStore
 
 
@@ -55,6 +56,12 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("analyze", help="Generate report and champion strategies")
 
+    refine_p = sub.add_parser("refine", help="Run local parameter perturbation and rolling validation")
+    refine_p.add_argument("--pattern", action="append", choices=["donchian_atr", "tsmom_vol"], help="Pattern to refine")
+    refine_p.add_argument("--max-per-symbol", type=int, default=40)
+    refine_p.add_argument("--rolling-windows", type=int, default=4)
+    refine_p.add_argument("--top-seeds-per-symbol", type=int, default=3)
+
     poll_p = sub.add_parser("poll", help="Poll latest bars and send signals")
     poll_p.add_argument("--once", action="store_true")
     poll_p.add_argument("--dry-run", action="store_true")
@@ -63,9 +70,9 @@ def main(argv: list[str] | None = None) -> int:
     poll_p.add_argument("--include-watch", action="store_true", help="Also emit WATCH_ONLY status messages")
     poll_p.add_argument(
         "--profile",
-        choices=["live", "safe_winrate", "max_return", "max_winrate", "balanced", "capital_safe"],
+        choices=["live", "safe_winrate", "refined_robust", "robust", "max_return", "max_winrate", "balanced", "capital_safe"],
         default="live",
-        help="Strategy profile to use for polling; live maps to safe_winrate",
+        help="Strategy profile to use for polling; live maps to safe_winrate, robust maps to refined_robust",
     )
 
     dash_p = sub.add_parser("dashboard", help="Run local FastAPI dashboard")
@@ -195,6 +202,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"report: {report_path}")
         active = [symbol for symbol, item in champions.items() if item.get("status") == "active"]
         print(f"active champions: {active}")
+        return 0
+
+    if args.command == "refine":
+        patterns = tuple(args.pattern) if args.pattern else ("donchian_atr", "tsmom_vol")
+        report_path, evaluations = refine_strategies(
+            store,
+            settings,
+            settings.reports_root,
+            patterns=patterns,
+            max_per_symbol=args.max_per_symbol,
+            rolling_windows=args.rolling_windows,
+            top_seeds_per_symbol=args.top_seeds_per_symbol,
+        )
+        print(f"refinement report: {report_path}")
+        print(f"refined candidates: {len(evaluations)}")
         return 0
 
     if args.command == "poll":

@@ -14,8 +14,11 @@ def analyze_results(store: LocalStore, settings: Settings, reports_root: str | P
     results = store.read_backtest_results()
     reports = Path(reports_root)
     reports.mkdir(parents=True, exist_ok=True)
+    existing_profiles = store.read_profiles()
     champions = select_champions(results, settings)
     profiles = select_profiles(results, settings)
+    if "refined_robust" in existing_profiles:
+        profiles["refined_robust"] = existing_profiles["refined_robust"]
     store.write_champions(champions)
     store.write_profiles(profiles)
     report_path = reports / "backtest_report.md"

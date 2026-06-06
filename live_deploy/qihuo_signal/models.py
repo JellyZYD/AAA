@@ -16,7 +16,14 @@ ActionType = Literal[
 ]
 
 RiskMode = Literal["strict", "signal", "aggressive"]
-PatternName = Literal["swing_reversal", "breakout", "failed_breakout", "trend_failure"]
+PatternName = Literal[
+    "swing_reversal",
+    "breakout",
+    "failed_breakout",
+    "trend_failure",
+    "donchian_atr",
+    "tsmom_vol",
+]
 Side = Literal["long", "short", "both"]
 
 
@@ -109,6 +116,12 @@ class StrategyParams:
     cooldown_bars: int = 4
     risk_mode: RiskMode = "strict"
     news_weight: float = 0.2
+    atr_period: int = 14
+    atr_mult: float = 2.5
+    exit_lookback: int = 12
+    momentum_lookback: int = 48
+    vol_lookback: int = 48
+    score_threshold: float = 0.4
 
     @property
     def strategy_id(self) -> str:
@@ -123,6 +136,12 @@ class StrategyParams:
             f"sl{self.stop_loss_pct:g}",
             f"mh{self.max_hold_bars}",
             f"cd{self.cooldown_bars}",
+            f"atr{self.atr_period}",
+            f"am{self.atr_mult:g}",
+            f"ex{self.exit_lookback}",
+            f"mom{self.momentum_lookback}",
+            f"vol{self.vol_lookback}",
+            f"th{self.score_threshold:g}",
             self.risk_mode,
         ]
         return "|".join(str(v) for v in values)

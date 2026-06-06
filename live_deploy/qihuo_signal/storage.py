@@ -29,7 +29,8 @@ class LocalStore:
             self.backtest_root,
         ]:
             path.mkdir(parents=True, exist_ok=True)
-        self.rebuild_duckdb()
+        if not self.duckdb_path.exists():
+            self.rebuild_duckdb()
 
     def bars_path(self, symbol: str, timeframe: str) -> Path:
         return self.bars_root / f"{symbol}_{timeframe}.parquet"
@@ -181,13 +182,16 @@ class LocalStore:
         except Exception:
             return
         self.root.mkdir(parents=True, exist_ok=True)
-        with duckdb.connect(str(self.duckdb_path)) as con:
-            con.execute("SELECT 1")
-            self._rebuild_table_from_paths(con, "bars", self.bars_root.glob("*.parquet") if self.bars_root.exists() else [])
-            self._rebuild_table_from_paths(con, "events", self.events_root.glob("*.parquet") if self.events_root.exists() else [])
-            self._rebuild_table_from_paths(con, "signals", self.signals_root.glob("*.parquet") if self.signals_root.exists() else [])
-            result_path = self.backtest_root / "results.parquet"
-            self._rebuild_table_from_paths(con, "backtest_results", [result_path] if result_path.exists() else [])
+        try:
+            with duckdb.connect(str(self.duckdb_path)) as con:
+                con.execute("SELECT 1")
+                self._rebuild_table_from_paths(con, "bars", self.bars_root.glob("*.parquet") if self.bars_root.exists() else [])
+                self._rebuild_table_from_paths(con, "events", self.events_root.glob("*.parquet") if self.events_root.exists() else [])
+                self._rebuild_table_from_paths(con, "signals", self.signals_root.glob("*.parquet") if self.signals_root.exists() else [])
+                result_path = self.backtest_root / "results.parquet"
+                self._rebuild_table_from_paths(con, "backtest_results", [result_path] if result_path.exists() else [])
+        except Exception:
+            return
 
     def _rebuild_table_from_paths(self, con, table: str, paths: Iterable[Path]) -> None:
         frames = []
@@ -210,28 +214,34 @@ class LocalStore:
             import duckdb
         except Exception:
             return
-        with duckdb.connect(str(self.duckdb_path)) as con:
-            con.execute(
-                """
-                CREATE TABLE IF NOT EXISTS bars (
-                    timestamp TIMESTAMP, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE,
-                    volume DOUBLE, hold DOUBLE, settle DOUBLE, contract VARCHAR,
-                    source VARCHAR, symbol VARCHAR, timeframe VARCHAR
+        try:
+            with duckdb.connect(str(self.duckdb_path)) as con:
+                con.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS bars (
+                        timestamp TIMESTAMP, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE,
+                        volume DOUBLE, hold DOUBLE, settle DOUBLE, contract VARCHAR,
+                        source VARCHAR, symbol VARCHAR, timeframe VARCHAR
+                    )
+                    """
                 )
-                """
-            )
-            con.execute("DELETE FROM bars WHERE symbol = ? AND timeframe = ?", [symbol, timeframe])
-            con.register("bars_df", df)
-            con.execute("INSERT INTO bars SELECT * FROM bars_df")
+                con.execute("DELETE FROM bars WHERE symbol = ? AND timeframe = ?", [symbol, timeframe])
+                con.register("bars_df", df)
+                con.execute("INSERT INTO bars SELECT * FROM bars_df")
+        except Exception:
+            return
 
     def _replace_table(self, table: str, df: pd.DataFrame) -> None:
         try:
             import duckdb
         except Exception:
             return
-        with duckdb.connect(str(self.duckdb_path)) as con:
-            con.register("replace_df", df)
-            con.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM replace_df")
+        try:
+            with duckdb.connect(str(self.duckdb_path)) as con:
+                con.register("replace_df", df)
+                con.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM replace_df")
+        except Exception:
+            return
 
 
 def normalize_bars(bars: pd.DataFrame) -> pd.DataFrame:

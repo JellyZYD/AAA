@@ -65,7 +65,40 @@ class StrategyTests(unittest.TestCase):
         actions = StrategyEngine().generate_actions(bars, params, symbol="RB")
         self.assertIn("OPEN_SHORT", [action.action for action in actions])
 
+    def test_donchian_atr_can_open_long(self) -> None:
+        bars = bars_from_closes([100, 101, 100, 102, 101, 100, 111, 114, 116, 115])
+        params = StrategyParams(
+            pattern="donchian_atr",
+            side="long",
+            timeframe="15m",
+            range_lookback=5,
+            breakout_pct=0.0,
+            atr_period=3,
+            atr_mult=2.0,
+            exit_lookback=3,
+            max_hold_bars=20,
+            risk_mode="signal",
+        )
+        actions = StrategyEngine().generate_actions(bars, params, symbol="RB")
+        self.assertIn("OPEN_LONG", [action.action for action in actions])
+
+    def test_tsmom_vol_can_open_short(self) -> None:
+        bars = bars_from_closes([120, 119, 118, 116, 114, 112, 110, 107, 104, 101, 99, 96])
+        params = StrategyParams(
+            pattern="tsmom_vol",
+            side="short",
+            timeframe="15m",
+            momentum_lookback=4,
+            vol_lookback=4,
+            score_threshold=0.1,
+            atr_period=3,
+            atr_mult=2.0,
+            max_hold_bars=20,
+            risk_mode="signal",
+        )
+        actions = StrategyEngine().generate_actions(bars, params, symbol="RB")
+        self.assertIn("OPEN_SHORT", [action.action for action in actions])
+
 
 if __name__ == "__main__":
     unittest.main()
-

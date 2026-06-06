@@ -241,9 +241,10 @@ def search_strategies(
     fast: bool = False,
     limit_per_symbol: int | None = None,
     sides: tuple[str, ...] = ("both",),
+    patterns: tuple[str, ...] | None = None,
     append: bool = False,
 ) -> list[BacktestResult]:
-    params_grid = build_param_grid(settings.timeframes, fast=fast, sides=sides)
+    params_grid = build_param_grid(settings.timeframes, fast=fast, sides=sides, patterns=patterns)
     params_by_timeframe: dict[str, list[StrategyParams]] = {}
     for params in params_grid:
         params_by_timeframe.setdefault(params.timeframe, []).append(params)
@@ -276,9 +277,10 @@ def parallel_search_strategies(
     workers: int = 4,
     progress: bool = True,
     sides: tuple[str, ...] = ("both",),
+    patterns: tuple[str, ...] | None = None,
     append: bool = False,
 ) -> list[BacktestResult]:
-    params_grid = build_param_grid(settings.timeframes, fast=fast, sides=sides)
+    params_grid = build_param_grid(settings.timeframes, fast=fast, sides=sides, patterns=patterns)
     params_by_timeframe: dict[str, list[StrategyParams]] = {}
     for params in params_grid:
         params_by_timeframe.setdefault(params.timeframe, []).append(params)

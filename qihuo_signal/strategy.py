@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
@@ -81,6 +82,10 @@ class StrategyEngine:
             return self._generate_breakout_actions(df, params, symbol, events, risk_filter)
         if params.pattern == "failed_breakout":
             return self._generate_failed_breakout_actions(df, params, symbol, events, risk_filter)
+        if params.pattern == "donchian_atr":
+            return self._generate_donchian_atr_actions(df, params, symbol, events, risk_filter)
+        if params.pattern == "tsmom_vol":
+            return self._generate_tsmom_vol_actions(df, params, symbol, events, risk_filter)
         raise ValueError(f"unknown pattern: {params.pattern}")
 
     def _generate_swing_actions(
@@ -310,6 +315,167 @@ class StrategyEngine:
                     entry_index = i
         return actions
 
+    def _generate_donchian_atr_actions(
+        self,
+        df: pd.DataFrame,
+        params: StrategyParams,
+        symbol: str,
+        events: pd.DataFrame | None,
+        risk_filter: RiskFilter | None,
+    ) -> list[StrategyAction]:
+        df = df.copy()
+        df["_atr"] = self._atr(df, params.atr_period)
+        actions: list[StrategyAction] = []
+        position = 0
+        stop_price: float | None = None
+        entry_index = -1
+        cooldown = 0
+        min_index = max(params.range_lookback, params.exit_lookback, params.atr_period)
+
+        for i, row in df.iterrows():
+            if i < min_index:
+                continue
+            if cooldown > 0:
+                cooldown -= 1
+            ts = pd.Timestamp(row["timestamp"])
+            close = float(row["close"])
+            high = float(row["high"])
+            low = float(row["low"])
+            atr = float(row["_atr"]) if pd.notna(row["_atr"]) else 0.0
+            if atr <= 0:
+                continue
+            prior = df.iloc[i - params.range_lookback : i]
+            exit_prior = df.iloc[i - params.exit_lookback : i]
+            channel_high = float(prior["high"].max())
+            channel_low = float(prior["low"].min())
+            exit_high = float(exit_prior["high"].max())
+            exit_low = float(exit_prior["low"].min())
+            bias = event_bias(events, symbol, ts) if events is not None else 0.0
+
+            if position == 1:
+                stop_price = max(stop_price or -math.inf, close - params.atr_mult * atr)
+                if low <= stop_price:
+                    actions.append(self._action(i, ts, "CLOSE_LONG", stop_price, "donchian long ATR trailing stop", stop_price, 0.55, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                elif close < exit_low or i - entry_index >= params.max_hold_bars:
+                    actions.append(self._action(i, ts, "CLOSE_LONG", close, "donchian long channel exit", stop_price, 0.56, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                continue
+            if position == -1:
+                stop_price = min(stop_price or math.inf, close + params.atr_mult * atr)
+                if high >= stop_price:
+                    actions.append(self._action(i, ts, "CLOSE_SHORT", stop_price, "donchian short ATR trailing stop", stop_price, 0.55, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                elif close > exit_high or i - entry_index >= params.max_hold_bars:
+                    actions.append(self._action(i, ts, "CLOSE_SHORT", close, "donchian short channel exit", stop_price, 0.56, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                continue
+            if cooldown > 0:
+                continue
+
+            if params.side in {"long", "both"} and close > channel_high * (1 + params.breakout_pct):
+                stop = close - params.atr_mult * atr
+                action = self._action(i, ts, "OPEN_LONG", close, "donchian channel breakout long", stop, 0.61, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = 1
+                    stop_price = stop
+                    entry_index = i
+            elif params.side in {"short", "both"} and close < channel_low * (1 - params.breakout_pct):
+                stop = close + params.atr_mult * atr
+                action = self._action(i, ts, "OPEN_SHORT", close, "donchian channel breakout short", stop, 0.61, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = -1
+                    stop_price = stop
+                    entry_index = i
+        return actions
+
+    def _generate_tsmom_vol_actions(
+        self,
+        df: pd.DataFrame,
+        params: StrategyParams,
+        symbol: str,
+        events: pd.DataFrame | None,
+        risk_filter: RiskFilter | None,
+    ) -> list[StrategyAction]:
+        df = df.copy()
+        df["_atr"] = self._atr(df, params.atr_period)
+        one_bar_returns = df["close"].pct_change()
+        lookback_return = df["close"].pct_change(params.momentum_lookback)
+        period_vol = one_bar_returns.rolling(params.vol_lookback, min_periods=params.vol_lookback).std()
+        period_vol = period_vol * math.sqrt(max(1, params.momentum_lookback))
+        df["_ts_score"] = lookback_return / period_vol.where(period_vol > 0)
+
+        actions: list[StrategyAction] = []
+        position = 0
+        stop_price: float | None = None
+        entry_index = -1
+        cooldown = 0
+        min_index = max(params.momentum_lookback, params.vol_lookback, params.atr_period)
+
+        for i, row in df.iterrows():
+            if i < min_index:
+                continue
+            if cooldown > 0:
+                cooldown -= 1
+            ts = pd.Timestamp(row["timestamp"])
+            close = float(row["close"])
+            high = float(row["high"])
+            low = float(row["low"])
+            atr = float(row["_atr"]) if pd.notna(row["_atr"]) else 0.0
+            score = float(row["_ts_score"]) if pd.notna(row["_ts_score"]) else 0.0
+            if atr <= 0:
+                continue
+            bias = event_bias(events, symbol, ts) if events is not None else 0.0
+
+            if position == 1:
+                stop_price = max(stop_price or -math.inf, close - params.atr_mult * atr)
+                if low <= stop_price:
+                    actions.append(self._action(i, ts, "CLOSE_LONG", stop_price, "tsmom long ATR trailing stop", stop_price, 0.53, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                elif score <= 0 or i - entry_index >= params.max_hold_bars:
+                    actions.append(self._action(i, ts, "CLOSE_LONG", close, "tsmom long momentum faded", stop_price, 0.55, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                continue
+            if position == -1:
+                stop_price = min(stop_price or math.inf, close + params.atr_mult * atr)
+                if high >= stop_price:
+                    actions.append(self._action(i, ts, "CLOSE_SHORT", stop_price, "tsmom short ATR trailing stop", stop_price, 0.53, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                elif score >= 0 or i - entry_index >= params.max_hold_bars:
+                    actions.append(self._action(i, ts, "CLOSE_SHORT", close, "tsmom short momentum faded", stop_price, 0.55, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                continue
+            if cooldown > 0:
+                continue
+
+            if params.side in {"long", "both"} and score >= params.score_threshold:
+                stop = close - params.atr_mult * atr
+                action = self._action(i, ts, "OPEN_LONG", close, f"positive volatility-scaled momentum score {score:.2f}", stop, 0.59, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = 1
+                    stop_price = stop
+                    entry_index = i
+            elif params.side in {"short", "both"} and score <= -params.score_threshold:
+                stop = close + params.atr_mult * atr
+                action = self._action(i, ts, "OPEN_SHORT", close, f"negative volatility-scaled momentum score {score:.2f}", stop, 0.59, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = -1
+                    stop_price = stop
+                    entry_index = i
+        return actions
+
     def _long_setup(
         self,
         confirmed: list[Pivot],
@@ -370,6 +536,21 @@ class StrategyEngine:
                 return pivot
         raise ValueError(f"no {kind} pivot")
 
+    def _atr(self, df: pd.DataFrame, period: int) -> pd.Series:
+        high = df["high"].astype(float)
+        low = df["low"].astype(float)
+        close = df["close"].astype(float)
+        prev_close = close.shift(1)
+        true_range = pd.concat(
+            [
+                high - low,
+                (high - prev_close).abs(),
+                (low - prev_close).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
+        return true_range.rolling(period, min_periods=period).mean()
+
     def _action(
         self,
         index: int,
@@ -416,17 +597,24 @@ def build_param_grid(
     timeframes: tuple[str, ...],
     fast: bool = False,
     sides: tuple[str, ...] = ("both",),
+    patterns: tuple[str, ...] | None = None,
 ) -> list[StrategyParams]:
-    patterns = ["swing_reversal", "breakout", "failed_breakout", "trend_failure"]
+    selected_patterns = list(patterns or ("swing_reversal", "breakout", "failed_breakout", "trend_failure", "donchian_atr", "tsmom_vol"))
     windows = [2, 3] if fast else [2, 3, 4]
     swing_pcts = [0.004, 0.008] if fast else [0.003, 0.006, 0.01]
     breakout_pcts = [0.0015, 0.003] if fast else [0.001, 0.0025, 0.005]
     range_lookbacks = [16, 32] if fast else [16, 24, 48]
     max_holds = [32, 64] if fast else [24, 48, 96]
+    atr_periods = [10, 14] if fast else [10, 14, 20]
+    atr_mults = [2.0, 3.0] if fast else [1.8, 2.5, 3.2]
+    exit_lookbacks = [8, 16] if fast else [8, 12, 24]
+    momentum_lookbacks = [24, 48] if fast else [24, 48, 96]
+    vol_lookbacks = [24, 48] if fast else [24, 48, 96]
+    score_thresholds = [0.4, 0.8] if fast else [0.3, 0.6, 0.9]
     risk_modes = ["strict", "signal", "aggressive"]
     params: list[StrategyParams] = []
     for timeframe in timeframes:
-        for pattern in patterns:
+        for pattern in selected_patterns:
             for side in sides:
                 for risk_mode in risk_modes:
                     if pattern in {"swing_reversal", "trend_failure"}:
@@ -447,18 +635,61 @@ def build_param_grid(
                                             )
                                         )
                     else:
-                        for lookback in range_lookbacks:
-                            for breakout_pct in breakout_pcts:
-                                for max_hold in max_holds:
-                                    params.append(
-                                        StrategyParams(
-                                            pattern=pattern,  # type: ignore[arg-type]
-                                            side=side,  # type: ignore[arg-type]
-                                            timeframe=timeframe,
-                                            range_lookback=lookback,
-                                            breakout_pct=breakout_pct,
-                                            max_hold_bars=max_hold,
-                                            risk_mode=risk_mode,  # type: ignore[arg-type]
+                        if pattern in {"breakout", "failed_breakout"}:
+                            for lookback in range_lookbacks:
+                                for breakout_pct in breakout_pcts:
+                                    for max_hold in max_holds:
+                                        params.append(
+                                            StrategyParams(
+                                                pattern=pattern,  # type: ignore[arg-type]
+                                                side=side,  # type: ignore[arg-type]
+                                                timeframe=timeframe,
+                                                range_lookback=lookback,
+                                                breakout_pct=breakout_pct,
+                                                max_hold_bars=max_hold,
+                                                risk_mode=risk_mode,  # type: ignore[arg-type]
+                                            )
                                         )
-                                    )
+                        elif pattern == "donchian_atr":
+                            for lookback in range_lookbacks:
+                                for breakout_pct in breakout_pcts:
+                                    for atr_period in atr_periods:
+                                        for atr_mult in atr_mults:
+                                            for exit_lookback in exit_lookbacks:
+                                                for max_hold in max_holds:
+                                                    params.append(
+                                                        StrategyParams(
+                                                            pattern=pattern,  # type: ignore[arg-type]
+                                                            side=side,  # type: ignore[arg-type]
+                                                            timeframe=timeframe,
+                                                            range_lookback=lookback,
+                                                            breakout_pct=breakout_pct,
+                                                            atr_period=atr_period,
+                                                            atr_mult=atr_mult,
+                                                            exit_lookback=exit_lookback,
+                                                            max_hold_bars=max_hold,
+                                                            risk_mode=risk_mode,  # type: ignore[arg-type]
+                                                        )
+                                                    )
+                        elif pattern == "tsmom_vol":
+                            for momentum_lookback in momentum_lookbacks:
+                                for vol_lookback in vol_lookbacks:
+                                    for threshold in score_thresholds:
+                                        for atr_period in atr_periods:
+                                            for atr_mult in atr_mults:
+                                                for max_hold in max_holds:
+                                                    params.append(
+                                                        StrategyParams(
+                                                            pattern=pattern,  # type: ignore[arg-type]
+                                                            side=side,  # type: ignore[arg-type]
+                                                            timeframe=timeframe,
+                                                            momentum_lookback=momentum_lookback,
+                                                            vol_lookback=vol_lookback,
+                                                            score_threshold=threshold,
+                                                            atr_period=atr_period,
+                                                            atr_mult=atr_mult,
+                                                            max_hold_bars=max_hold,
+                                                            risk_mode=risk_mode,  # type: ignore[arg-type]
+                                                        )
+                                                    )
     return params

@@ -44,6 +44,12 @@ def main(argv: list[str] | None = None) -> int:
     bt_p.add_argument("--timeframe", action="append", help="Limit search to one or more timeframes")
     bt_p.add_argument("--workers", type=int, default=6, help="Parallel worker processes")
     bt_p.add_argument("--side", action="append", choices=["both", "long", "short"], help="Limit strategy side")
+    bt_p.add_argument(
+        "--pattern",
+        action="append",
+        choices=["swing_reversal", "breakout", "failed_breakout", "trend_failure", "donchian_atr", "tsmom_vol"],
+        help="Limit search to one or more strategy patterns",
+    )
     bt_p.add_argument("--append", action="store_true", help="Merge new results with existing results")
     bt_p.add_argument("--symbol", action="append", help="Limit search to one or more symbols")
 
@@ -156,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
         sides = tuple(args.side) if args.side else ("both",)
+        patterns = tuple(args.pattern) if args.pattern else None
         if args.workers and args.workers > 1:
             results = parallel_search_strategies(
                 store,
@@ -164,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
                 limit_per_symbol=args.limit_per_symbol,
                 workers=args.workers,
                 sides=sides,
+                patterns=patterns,
                 append=args.append,
             )
         else:
@@ -173,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
                 fast=args.fast,
                 limit_per_symbol=args.limit_per_symbol,
                 sides=sides,
+                patterns=patterns,
                 append=args.append,
             )
         print(f"backtest results: {len(results)}")

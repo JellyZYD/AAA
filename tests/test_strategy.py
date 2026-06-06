@@ -7,6 +7,7 @@ import pandas as pd
 from qihuo_signal.models import StrategyParams
 from qihuo_signal.refine import _perturb
 from qihuo_signal.strategy import StrategyEngine, detect_pivots
+from qihuo_signal.walkforward import _train_score
 
 
 def bars_from_closes(closes: list[float]) -> pd.DataFrame:
@@ -105,6 +106,14 @@ class StrategyTests(unittest.TestCase):
         candidates = _perturb(params)
         self.assertTrue(candidates)
         self.assertEqual(candidates[0].strategy_id, params.strategy_id)
+
+    def test_walk_forward_train_score_penalizes_losses(self) -> None:
+        from qihuo_signal.models import BacktestResult, Settings
+
+        params = StrategyParams(pattern="tsmom_vol").to_dict()
+        good = BacktestResult("RB", "1d", "good", params, 1000, 0.1, -500, 0.5, 2.0, 10, 100, -100, 1)
+        bad = BacktestResult("RB", "1d", "bad", params, -1000, -0.1, -500, 0.5, 2.0, 10, -100, -500, 5)
+        self.assertGreater(_train_score(good, Settings()), _train_score(bad, Settings()))
 
 
 if __name__ == "__main__":

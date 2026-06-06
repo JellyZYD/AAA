@@ -15,6 +15,7 @@ from .events import LLMEventAnalyzer, classify_headline_frame, fetch_major_headl
 from .polling import SignalPoller
 from .refine import refine_strategies
 from .storage import LocalStore
+from .walkforward import run_walk_forward
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -62,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
     refine_p.add_argument("--rolling-windows", type=int, default=4)
     refine_p.add_argument("--top-seeds-per-symbol", type=int, default=3)
 
+    wf_p = sub.add_parser("walk-forward", help="Run causal walk-forward validation from refined candidates")
+    wf_p.add_argument("--folds", type=int, default=5)
+    wf_p.add_argument("--max-per-symbol", type=int, default=12)
+
     poll_p = sub.add_parser("poll", help="Poll latest bars and send signals")
     poll_p.add_argument("--once", action="store_true")
     poll_p.add_argument("--dry-run", action="store_true")
@@ -70,7 +75,18 @@ def main(argv: list[str] | None = None) -> int:
     poll_p.add_argument("--include-watch", action="store_true", help="Also emit WATCH_ONLY status messages")
     poll_p.add_argument(
         "--profile",
-        choices=["live", "safe_winrate", "refined_robust", "robust", "max_return", "max_winrate", "balanced", "capital_safe"],
+        choices=[
+            "live",
+            "safe_winrate",
+            "refined_robust",
+            "robust",
+            "walk_forward",
+            "walkforward",
+            "max_return",
+            "max_winrate",
+            "balanced",
+            "capital_safe",
+        ],
         default="live",
         help="Strategy profile to use for polling; live maps to safe_winrate, robust maps to refined_robust",
     )
@@ -217,6 +233,18 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"refinement report: {report_path}")
         print(f"refined candidates: {len(evaluations)}")
+        return 0
+
+    if args.command == "walk-forward":
+        report_path, summaries = run_walk_forward(
+            store,
+            settings,
+            settings.reports_root,
+            folds=args.folds,
+            max_per_symbol=args.max_per_symbol,
+        )
+        print(f"walk-forward report: {report_path}")
+        print(f"walk-forward symbols: {len(summaries)}")
         return 0
 
     if args.command == "poll":

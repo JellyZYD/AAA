@@ -7,6 +7,7 @@ if [ -d .venv ]; then
 fi
 
 interval_seconds="${QIHUO_LOOP_INTERVAL_SECONDS:-900}"
+# Default news digest cadence: 8 hours.
 news_interval_seconds="${QIHUO_NEWS_INTERVAL_SECONDS:-28800}"
 last_news_at=0
 

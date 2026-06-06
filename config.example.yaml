@@ -1,0 +1,33 @@
+capital: 8500
+max_margin_budget: 8000
+max_risk_per_trade: 1700
+poll_interval_minutes: 15
+data_root: data
+reports_root: reports
+timeframes:
+  - 15m
+  - 30m
+  - 60m
+  - 1d
+symbols:
+  - SP
+  - SR
+  - CJ
+  - UR
+  - FG
+  - C
+  - RB
+  - RM
+  - HC
+  - SA
+  - CS
+backtest:
+  objective: max_return
+  train_ratio: 0.7
+  slippage_ticks: 1
+  min_trades_for_champion: 3
+llm:
+  provider: openai_compatible
+alert:
+  provider: wecom
+  dry_run: false

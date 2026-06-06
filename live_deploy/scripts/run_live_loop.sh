@@ -11,6 +11,5 @@ while true; do
   python -m qihuo_signal update || true
   python -m qihuo_signal poll --once || true
   python -m qihuo_signal news-poll || true
-  sleep 900
+  sleep "${QIHUO_LOOP_INTERVAL_SECONDS:-900}"
 done
-

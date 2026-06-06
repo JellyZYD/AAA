@@ -131,27 +131,43 @@ def format_news_events(events: list[NewsEvent], title: str = "期货新闻影响
 def format_news_digest(events: list[NewsEvent], major_headlines: pd.DataFrame, title: str = "期货实时新闻") -> str:
     lines = [title]
     if not major_headlines.empty:
-        lines.append("\n重大新闻摘要:")
-        for _, row in major_headlines.head(8).iterrows():
+        lines.append("重大新闻:")
+        for index, (_, row) in enumerate(major_headlines.head(3).iterrows(), start=1):
             source = str(row.get("source", "news"))
-            headline = str(row.get("title", ""))[:180]
-            lines.append(f"- [{source}] {headline}")
+            headline = _display_headline(str(row.get("title", "")), 48)
+            lines.append(f"{index}. [{source}] {headline}")
     else:
-        lines.append("\n重大新闻摘要: 暂无可用新闻源。")
+        lines.append("重大新闻: 暂无")
 
     if events:
-        lines.append("\n对可交易品种的影响:")
-        for event in events[:20]:
+        lines.append("品种影响:")
+        for event in events[:5]:
             direction = {"bullish": "利多", "bearish": "利空", "neutral": "中性"}.get(event.direction, event.direction)
-            reason = event.similar_events[:160] or str(event.raw.get("reason", ""))[:160]
-            lines.append(
-                f"- {event.symbol} {direction} 置信度 {event.confidence:.2f} 影响 {event.impact_score:.2f}: "
-                f"{event.title[:120]} | {reason}"
-            )
+            reason = _shorten(event.similar_events or str(event.raw.get("reason", "")), 60)
+            headline = _shorten(event.title, 54)
+            suffix = f"；{reason}" if reason else ""
+            lines.append(f"- {event.symbol} {direction} 置信{event.confidence:.2f}/影响{event.impact_score:.2f}: {headline}{suffix}")
+        if len(events) > 5:
+            lines.append(f"- 另有 {len(events) - 5} 条影响已入库")
     else:
-        lines.append("\n对可交易品种的影响: 当前没有识别到强相关事件。")
+        lines.append("品种影响: 暂无强相关事件")
     return "\n".join(lines)
 
 
 def _fmt(value: float | None) -> str:
     return "-" if value is None else f"{value:.2f}"
+
+
+def _shorten(text: str, limit: int) -> str:
+    clean = " ".join(str(text).split())
+    if len(clean) <= limit:
+        return clean
+    return clean[: max(0, limit - 1)] + "…"
+
+
+def _display_headline(text: str, limit: int) -> str:
+    clean = " ".join(str(text).split())
+    # CCTV source rows append article content after the headline; keep the notification title-only.
+    if " " in clean:
+        clean = clean.split(" ", 1)[0]
+    return _shorten(clean, limit)

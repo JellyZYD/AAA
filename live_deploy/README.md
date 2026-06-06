@@ -20,4 +20,4 @@ python -m qihuo_signal news-poll
 bash scripts/run_live_loop.sh
 ```
 
-`run_live_loop.sh` 默认每 15 分钟执行一次：更新行情、检测信号、抓取新闻并通过企业微信推送。新闻消息只显示 3 条重大新闻标题和最多 5 条品种影响。可以用 `QIHUO_LOOP_INTERVAL_SECONDS=300 bash scripts/run_live_loop.sh` 改成 5 分钟一次。
+`run_live_loop.sh` 默认每 15 分钟执行一次行情更新和信号检测；新闻推送默认启动时执行一次，之后每 8 小时执行一次。新闻消息只显示 3 条重大新闻标题和最多 5 条品种影响。可以用 `QIHUO_LOOP_INTERVAL_SECONDS=300` 把信号改成 5 分钟一次，用 `QIHUO_NEWS_INTERVAL_SECONDS=14400` 把新闻改成 4 小时一次。

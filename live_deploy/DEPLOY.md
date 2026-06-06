@@ -32,9 +32,11 @@ LLM_MODEL=replace-me
 ## 频率
 
 - `python -m qihuo_signal news-poll` 是单次新闻检索。
-- `scripts/run_live_loop.sh` 默认每 15 分钟跑一次新闻检索和实盘信号。
+- `scripts/run_live_loop.sh` 默认每 15 分钟跑一次行情更新和实盘信号。
+- 新闻推送默认启动时执行一次，之后每 8 小时执行一次。
 - 新闻推送默认只显示 3 条重大新闻标题和最多 5 条品种影响。
-- 修改频率：`QIHUO_LOOP_INTERVAL_SECONDS=300 bash scripts/run_live_loop.sh`。
+- 修改信号频率：`QIHUO_LOOP_INTERVAL_SECONDS=300 bash scripts/run_live_loop.sh`。
+- 修改新闻频率：`QIHUO_NEWS_INTERVAL_SECONDS=14400 bash scripts/run_live_loop.sh`。
 
 ## 默认实盘策略
 

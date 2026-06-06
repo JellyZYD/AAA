@@ -6,10 +6,19 @@ if [ -d .venv ]; then
   . .venv/bin/activate
 fi
 
+interval_seconds="${QIHUO_LOOP_INTERVAL_SECONDS:-900}"
+news_interval_seconds="${QIHUO_NEWS_INTERVAL_SECONDS:-28800}"
+last_news_at=0
+
 while true; do
   date
   python -m qihuo_signal update || true
   python -m qihuo_signal poll --once || true
-  python -m qihuo_signal news-poll || true
-  sleep "${QIHUO_LOOP_INTERVAL_SECONDS:-900}"
+  now="$(date +%s)"
+  if [ $((now - last_news_at)) -ge "$news_interval_seconds" ]; then
+    if python -m qihuo_signal news-poll; then
+      last_news_at="$now"
+    fi
+  fi
+  sleep "$interval_seconds"
 done

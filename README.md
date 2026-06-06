@@ -21,8 +21,9 @@ bash scripts/run_live_loop.sh
 
 ## 运行频率
 
-- `scripts/run_live_loop.sh` 默认每 15 分钟循环一次：更新行情、检测交易信号、抓取新闻并推送。
-- 可以用环境变量修改频率，例如 `QIHUO_LOOP_INTERVAL_SECONDS=300 bash scripts/run_live_loop.sh` 表示每 5 分钟一次。
+- `scripts/run_live_loop.sh` 默认每 15 分钟循环一次：更新行情、检测交易信号。
+- 新闻推送默认启动时执行一次，之后每 8 小时执行一次。
+- 可以用环境变量修改频率，例如 `QIHUO_LOOP_INTERVAL_SECONDS=300` 表示信号每 5 分钟一次，`QIHUO_NEWS_INTERVAL_SECONDS=14400` 表示新闻每 4 小时一次。
 - `python -m qihuo_signal news-poll` 是单次新闻检索和推送，不会自己循环。
 - `python -m qihuo_signal poll` 的连续模式也读取 `config.yaml` 里的 `poll_interval_minutes: 15`。
 

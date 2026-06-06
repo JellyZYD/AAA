@@ -26,8 +26,8 @@
 |16|HC|1d|63378.52|-10691.45|58.5%|82|13751.12||`donchian_atr|both|1d|w3|sw0.006|br0.0015|lb16|sl0.015|mh24|cd4|atr14|am3.5|ex16|mom48|vol48|th0.4|signal`|
 |17|SA|1d|63275.76|-19835.79|44.7%|47|108.98||`donchian_atr|both|1d|w3|sw0.006|br0.0015|lb16|sl0.015|mh48|cd4|atr10|am2.5|ex12|mom48|vol48|th0.4|signal`|
 |18|SA|1d|62736.93|-17876.29|41.2%|51|-2563.39|Y|`donchian_atr|both|1d|w3|sw0.006|br0.0015|lb8|sl0.015|mh64|cd4|atr10|am2.5|ex12|mom48|vol48|th0.4|signal`|
-|19|RB|1d|62294.75|-13268.69|30.2%|149|-6451.06|Y|`trend_failure|both|1d|w2|sw0.008|br0.003|lb24|sl0.015|mh32|cd4|aggressive`|
-|20|RB|1d|62294.75|-13268.69|30.2%|149|-6451.06|Y|`trend_failure|both|1d|w2|sw0.008|br0.003|lb24|sl0.015|mh32|cd4|signal`|
+|19|RB|1d|62294.75|-13268.69|30.2%|149|-6451.06|Y|`trend_failure|both|1d|w2|sw0.008|br0.003|lb24|sl0.015|mh32|cd4|strict`|
+|20|RB|1d|62294.75|-13268.69|30.2%|149|-6451.06|Y|`trend_failure|both|1d|w2|sw0.008|br0.003|lb24|sl0.015|mh32|cd4|aggressive`|
 
 ## Champion 策略
 
@@ -38,7 +38,7 @@
 - FG: 启用，净收益 51337.31，样本外 11772.36，交易数 93，策略 `donchian_atr|both|1d|w3|sw0.006|br0.0015|lb16|sl0.015|mh64|cd4|atr20|am3|ex8|mom48|vol48|th0.4|signal`。
 - C: 启用，净收益 22435.99，样本外 14186.96，交易数 154，策略 `trend_failure|both|1d|w3|sw0.004|br0.003|lb24|sl0.015|mh32|cd4|strict`。
 - RB: 启用，净收益 51082.21，样本外 956.95，交易数 215，策略 `tsmom_vol|both|1d|w3|sw0.006|br0.002|lb24|sl0.015|mh64|cd4|atr10|am2|ex12|mom16|vol24|th0.4|strict`。
-- RM: 启用，净收益 19993.04，样本外 5094.26，交易数 93，策略 `swing_reversal|both|1d|w2|sw0.008|br0.0015|lb24|sl0.015|mh64|cd4|signal`。
+- RM: 启用，净收益 19993.04，样本外 5094.26，交易数 93，策略 `swing_reversal|both|1d|w2|sw0.008|br0.0015|lb24|sl0.015|mh64|cd4|aggressive`。
 - HC: 启用，净收益 63378.52，样本外 13751.12，交易数 82，策略 `donchian_atr|both|1d|w3|sw0.006|br0.0015|lb16|sl0.015|mh24|cd4|atr14|am3.5|ex16|mom48|vol48|th0.4|signal`。
 - SA: 启用，净收益 85387.14，样本外 1148.96，交易数 44，策略 `donchian_atr|both|1d|w3|sw0.006|br0.001|lb16|sl0.015|mh64|cd4|atr10|am2.5|ex12|mom48|vol48|th0.4|signal`。
 - CS: 启用，净收益 18628.55，样本外 0.00，交易数 4，策略 `vol_breakout|both|1d|w3|sw0.006|br0.0015|lb32|sl0.015|mh64|cd4|atr10|am3|ex16|mom48|vol48|th0.75|strict`。
@@ -53,15 +53,15 @@
 - FG: 净收益 51337.31，胜率 45.2%，交易 93，样本外 11772.36，`donchian_atr|both|1d|w3|sw0.006|br0.0015|lb16|sl0.015|mh64|cd4|atr20|am3|ex8|mom48|vol48|th0.4|signal`。
 - C: 净收益 22435.99，胜率 34.4%，交易 154，样本外 14186.96，`trend_failure|both|1d|w3|sw0.004|br0.003|lb24|sl0.015|mh32|cd4|signal`。
 - RB: 净收益 51082.21，胜率 44.7%，交易 215，样本外 956.95，`tsmom_vol|both|1d|w3|sw0.006|br0.002|lb24|sl0.015|mh64|cd4|atr10|am2|ex12|mom16|vol24|th0.4|strict`。
-- RM: 净收益 19993.04，胜率 15.1%，交易 93，样本外 5094.26，`swing_reversal|both|1d|w2|sw0.008|br0.0015|lb24|sl0.015|mh64|cd4|aggressive`。
+- RM: 净收益 19993.04，胜率 15.1%，交易 93，样本外 5094.26，`swing_reversal|both|1d|w2|sw0.008|br0.0015|lb24|sl0.015|mh64|cd4|signal`。
 - HC: 净收益 63378.52，胜率 58.5%，交易 82，样本外 13751.12，`donchian_atr|both|1d|w3|sw0.006|br0.0015|lb16|sl0.015|mh24|cd4|atr14|am3.5|ex16|mom48|vol48|th0.4|signal`。
 - SA: 净收益 85387.14，胜率 45.5%，交易 44，样本外 1148.96，`donchian_atr|both|1d|w3|sw0.006|br0.001|lb16|sl0.015|mh64|cd4|atr10|am2.5|ex12|mom48|vol48|th0.4|signal`。
 - CS: 净收益 18628.55，胜率 75.0%，交易 4，样本外 0.00，`vol_breakout|both|1d|w3|sw0.006|br0.0015|lb32|sl0.015|mh64|cd4|atr10|am3|ex16|mom48|vol48|th0.75|strict`。
 ### 最高胜率
-- SP: 净收益 22095.71，胜率 54.5%，交易 22，样本外 4250.61，`vol_breakout|both|1d|w3|sw0.006|br0.0015|lb16|sl0.015|mh32|cd4|atr10|am2|ex16|mom48|vol48|th0.9|aggressive`。
+- SP: 净收益 1865.11，胜率 57.1%，交易 21，样本外 3121.60，`carry_tsmom|both|1d|w3|sw0.006|br0.002|lb24|sl0.015|mh32|cd4|atr14|am2|ex12|mom48|vol48|th0.8|aggressive`。
 - SR: 净收益 25542.30，胜率 56.5%，交易 23，样本外 9416.87，`tsmom_vol|both|1d|w3|sw0.006|br0.002|lb24|sl0.015|mh64|cd4|atr10|am3.5|ex12|mom24|vol48|th1|strict`。
-- CJ: 净收益 4185.25，胜率 65.0%，交易 20，样本外 2076.97，`trend_failure|both|15m|w3|sw0.004|br0.003|lb24|sl0.015|mh32|cd4|strict`。
-- UR: 净收益 6069.30，胜率 63.6%，交易 22，样本外 2434.41，`breakout|both|15m|w3|sw0.006|br0.0015|lb16|sl0.015|mh32|cd4|aggressive`。
+- CJ: 净收益 4185.25，胜率 65.0%，交易 20，样本外 2076.97，`trend_failure|both|15m|w3|sw0.004|br0.003|lb24|sl0.015|mh32|cd4|signal`。
+- UR: 净收益 6069.30，胜率 63.6%，交易 22，样本外 2434.41，`breakout|both|15m|w3|sw0.006|br0.0015|lb16|sl0.015|mh32|cd4|strict`。
 - FG: 净收益 2073.04，胜率 65.2%，交易 23，样本外 301.15，`tsmom_vol|both|30m|w3|sw0.006|br0.002|lb24|sl0.015|mh32|cd4|atr14|am3|ex12|mom48|vol24|th0.8|strict`。
 - C: 净收益 892.26，胜率 60.9%，交易 23，样本外 605.84，`breakout|both|60m|w3|sw0.006|br0.0015|lb16|sl0.015|mh32|cd4|signal`。
 - RB: 净收益 19351.45，胜率 60.7%，交易 28，样本外 810.98，`vol_breakout|both|1d|w3|sw0.006|br0.003|lb16|sl0.015|mh32|cd4|atr10|am2|ex8|mom48|vol48|th0.75|strict`。
@@ -94,10 +94,10 @@
 - SA: 净收益 27284.12，胜率 25.0%，交易 44，样本外 13612.33，`failed_breakout|long|1d|w3|sw0.006|br0.0015|lb32|sl0.015|mh32|cd4|aggressive`。
 - CS: 净收益 15706.95，胜率 34.5%，交易 87，样本外 18.02，`failed_breakout|both|1d|w3|sw0.006|br0.003|lb16|sl0.015|mh32|cd4|strict`。
 ### safe_winrate
-- SP: 净收益 22095.71，胜率 54.5%，交易 22，样本外 4250.61，`vol_breakout|both|1d|w3|sw0.006|br0.0015|lb16|sl0.015|mh32|cd4|atr10|am2|ex16|mom48|vol48|th0.9|aggressive`。
+- SP: 净收益 1865.11，胜率 57.1%，交易 21，样本外 3121.60，`carry_tsmom|both|1d|w3|sw0.006|br0.002|lb24|sl0.015|mh32|cd4|atr14|am2|ex12|mom48|vol48|th0.8|aggressive`。
 - SR: 净收益 25542.30，胜率 56.5%，交易 23，样本外 9416.87，`tsmom_vol|both|1d|w3|sw0.006|br0.002|lb24|sl0.015|mh64|cd4|atr10|am3.5|ex12|mom24|vol48|th1|strict`。
-- CJ: 净收益 4185.25，胜率 65.0%，交易 20，样本外 2076.97，`trend_failure|both|15m|w3|sw0.004|br0.003|lb24|sl0.015|mh32|cd4|strict`。
-- UR: 净收益 6069.30，胜率 63.6%，交易 22，样本外 2434.41，`breakout|both|15m|w3|sw0.006|br0.0015|lb16|sl0.015|mh32|cd4|aggressive`。
+- CJ: 净收益 4185.25，胜率 65.0%，交易 20，样本外 2076.97，`trend_failure|both|15m|w3|sw0.004|br0.003|lb24|sl0.015|mh32|cd4|signal`。
+- UR: 净收益 6069.30，胜率 63.6%，交易 22，样本外 2434.41，`breakout|both|15m|w3|sw0.006|br0.0015|lb16|sl0.015|mh32|cd4|strict`。
 - FG: 净收益 2073.04，胜率 65.2%，交易 23，样本外 301.15，`tsmom_vol|both|30m|w3|sw0.006|br0.002|lb24|sl0.015|mh32|cd4|atr14|am3|ex12|mom48|vol24|th0.8|strict`。
 - C: 净收益 892.26，胜率 60.9%，交易 23，样本外 605.84，`breakout|both|60m|w3|sw0.006|br0.0015|lb16|sl0.015|mh32|cd4|signal`。
 - RB: 净收益 19351.45，胜率 60.7%，交易 28，样本外 810.98，`vol_breakout|both|1d|w3|sw0.006|br0.003|lb16|sl0.015|mh32|cd4|atr10|am2|ex8|mom48|vol48|th0.75|strict`。

@@ -16,16 +16,19 @@
 - `donchian_atr`：用前 N 根 K 线高低点做 Donchian 通道，突破开仓，ATR 倍数初始止损并跟踪止损，短通道/最长持仓退出。
 - `tsmom_vol`：用过去收益除以同窗口波动率得到趋势强度分数，超过阈值开多，低于负阈值开空，ATR 跟踪止损，动量归零或最长持仓退出。
 - `vol_breakout`：只在 ATR/价格和通道宽度相对过去处于压缩状态时允许通道突破开仓，用 ATR 跟踪止损和短通道退出，目标是减少普通突破在震荡期的虚假信号。
+- `carry_tsmom`：用历史单合约日线构造近月/远月期限结构，远月低于近月视为正 Carry 支持做多，远月高于近月视为负 Carry 支持做空，并与时间序列动量同向时才开仓。
 
-这些策略都只使用当前已完成 K 线和此前窗口，没有逐根 K 线未来函数。`vol_breakout` 的压缩判断使用前一根及更早的 ATR/通道宽度，突破通道也只用当前 K 线以前的高低点。
+这些策略都只使用当前已完成 K 线和此前窗口，没有逐根 K 线未来函数。`vol_breakout` 的压缩判断使用前一根及更早的 ATR/通道宽度，突破通道也只用当前 K 线以前的高低点。`carry_tsmom` 的 Carry 因子在策略里 `shift(1)` 后使用，避免用同日收盘后才能确认的期限结构去同价成交。
 
 ## 当前本地回测规模
 
-- 回测结果表：约 3.11 万条策略结果。
+- 回测结果表：约 3.34 万条策略结果。
 - 新增策略覆盖：
   - `donchian_atr`：约 6920 条。
   - `tsmom_vol`：约 2640 条。
   - `vol_breakout`：约 7100 条。
+  - `carry_tsmom`：约 2112 条。
+- 期限结构本地缓存：SP、SR、CJ、UR 覆盖到 2026-06-05；FG、C、RB、HC、SA 有部分历史；RM、CS 暂未拉到可用单合约历史，仍只使用价格策略。
 - 已跑全品种轻量搜索；并对 SA、HC、FG 等日线 Donchian/ATR 做了部分加深搜索。
 
 ## 新增策略当前领先结果
@@ -75,28 +78,28 @@
 
 ## Walk-forward 扩展验证更新
 
-这轮新增了 `vol_breakout`，并把 walk-forward 候选池扩展为“refined 候选 + 最新回测中 Donchian/ATR、TSMOM/Vol、Vol Breakout 的高分候选”。每个测试窗口仍只允许用此前历史窗口选择参数，再在下一个窗口测试，因此比普通全样本回测更接近实盘。
+这轮新增了 `vol_breakout` 和 `carry_tsmom`，并把 walk-forward 候选池扩展为“refined 候选 + 最新回测中 Donchian/ATR、TSMOM/Vol、Vol Breakout、Carry TSMOM 的高分候选”。每个测试窗口仍只允许用此前历史窗口选择参数，再在下一个窗口测试，因此比普通全样本回测更接近实盘。
 
 当前 `walk_forward` 画像已经作为 `qihuo poll --profile live` 的默认优先实盘画像；如果本地没有 walk-forward profile，才回退到 `safe_winrate`。
 
 | 品种 | 状态 | 策略 | 周期 | WF分 | 测试净收益 | 正窗口 | 最差回撤 | 平均胜率 | 交易数 |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| SP 纸浆 | active | Breakout | 1d | 46274 | 17250 | 4/4 | -8321 | 29.5% | 39 |
-| FG 玻璃 | active | Donchian/ATR | 1d | 44985 | 20042 | 3/4 | -8194 | 32.7% | 84 |
-| SR 白糖 | active | TSMOM/Vol | 1d | 44599 | 20593 | 3/4 | -6601 | 54.6% | 25 |
-| HC 热卷 | active | Donchian/ATR | 1d | 41764 | 12504 | 3/4 | -2503 | 57.5% | 16 |
-| UR 尿素 | active | Vol Breakout | 15m | 29312 | 2272 | 4/4 | -724 | 85.4% | 12 |
+| SR 白糖 | active | TSMOM/Vol | 1d | 44558 | 20593 | 3/4 | -6601 | 54.6% | 25 |
+| HC 热卷 | active | TSMOM/Vol | 1d | 35658 | 12094 | 3/4 | -5199 | 32.4% | 71 |
+| FG 玻璃 | active | Donchian/ATR | 1d | 30854 | 14634 | 2/4 | -7617 | 35.6% | 46 |
 | C 玉米 | active | Vol Breakout | 60m | 27481 | 1610 | 4/4 | -623 | 77.1% | 12 |
+| SP 纸浆 | active | Breakout | 1d | 26148 | 10406 | 3/4 | -8321 | 19.5% | 35 |
 | CJ 红枣 | active | Vol Breakout | 1d | 24549 | 6892 | 2/4 | -1762 | 37.5% | 5 |
 | CS 玉米淀粉 | active | Donchian/ATR | 15m | 22853 | 1370 | 3/4 | -282 | 77.1% | 12 |
-| RM 菜粕 | active | Donchian/ATR | 30m | 22035 | 2321 | 3/4 | -1267 | 62.5% | 20 |
-| SA 纯碱 | active | Vol Breakout | 30m | 21413 | 2414 | 3/4 | -1052 | 47.5% | 10 |
+| UR 尿素 | active | Donchian/ATR | 60m | 22127 | 3421 | 3/4 | -1713 | 50.6% | 21 |
+| RM 菜粕 | active | Vol Breakout | 60m | 18665 | 1806 | 2/4 | -405 | 66.7% | 8 |
 | RB 螺纹钢 | active | Donchian/ATR | 15m | 17510 | 314 | 3/4 | -439 | 56.2% | 12 |
+| SA 纯碱 | active | Vol Breakout | 30m | 13217 | 1160 | 2/4 | -1780 | 67.5% | 13 |
 
-结论：`vol_breakout` 不是全局收益最高的策略，但它在小资金风险约束下明显改善了 UR、C、CJ、SA 等品种的 walk-forward 选择；RB 也不再使用高回撤日线策略，而改为低回撤 15m Donchian/ATR。当前最适合部署的实盘画像是 `walk_forward`，不是单纯最高收益或单纯最高胜率。
+Carry 验证结论：`carry_tsmom` 在普通样本切分中对 FG、CJ、SA、SP 有正贡献；更公平的 walk-forward 后，C 玉米日线 Carry TSMOM 通过 active 过滤，测试净收益约 5588、最差回撤约 -3329，但最终仍低于 C 的 60m `vol_breakout`。因此 Carry 因子暂时作为候选和研究因子保留，不替换当前实盘主策略。当前最适合部署的实盘画像仍是 `walk_forward`，不是单纯最高收益或单纯最高胜率。
 
 ## 下一步
 
-- 补充主力/次主力价差和期限结构数据，验证 Carry、期限结构动量、基差动量。外部研究显示这些因子对商品期货有效，但当前本地缓存还不完整。
-- 对 `vol_breakout` 做更细的参数扰动，但保留 walk-forward 作为最终过滤，防止只优化出局部历史表现。
+- 继续补 RM、CS 以及 RB/HC/SA 后续合约历史覆盖，优先解决 AkShare 单合约代码/接口不稳定问题。
+- 对 `carry_tsmom` 做更稳健的风险过滤，例如只允许 strict 风险模式、限制年化 Carry 极端值，继续用 walk-forward 过滤。
 - 对新闻事件因子做只加权、不单独开仓的影响验证。

@@ -245,7 +245,7 @@
     "best": {
       "symbol": "RM",
       "timeframe": "1d",
-      "strategy_id": "swing_reversal|both|1d|w2|sw0.008|br0.0015|lb24|sl0.015|mh64|cd4|signal",
+      "strategy_id": "swing_reversal|both|1d|w2|sw0.008|br0.0015|lb24|sl0.015|mh64|cd4|aggressive",
       "net_pnl": 19993.043525000077,
       "total_return": 2.3521227676470677,
       "max_drawdown": -15926.414489999963,
@@ -258,7 +258,7 @@
       "train_net_pnl": 15551.908155000057,
       "test_net_pnl": 5094.256545000017,
       "overfit_flag": false,
-      "params_json": "{\"breakout_pct\": 0.0015, \"cooldown_bars\": 4, \"max_hold_bars\": 64, \"min_swing_pct\": 0.008, \"news_weight\": 0.2, \"pattern\": \"swing_reversal\", \"range_lookback\": 24, \"risk_mode\": \"signal\", \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 2, \"timeframe\": \"1d\"}",
+      "params_json": "{\"breakout_pct\": 0.0015, \"cooldown_bars\": 4, \"max_hold_bars\": 64, \"min_swing_pct\": 0.008, \"news_weight\": 0.2, \"pattern\": \"swing_reversal\", \"range_lookback\": 24, \"risk_mode\": \"aggressive\", \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 2, \"timeframe\": \"1d\"}",
       "params": {
         "breakout_pct": 0.0015,
         "cooldown_bars": 4,
@@ -267,7 +267,7 @@
         "news_weight": 0.2,
         "pattern": "swing_reversal",
         "range_lookback": 24,
-        "risk_mode": "signal",
+        "risk_mode": "aggressive",
         "side": "both",
         "stop_loss_pct": 0.015,
         "swing_window": 2,

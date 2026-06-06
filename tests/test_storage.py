@@ -3,6 +3,8 @@ from __future__ import annotations
 import tempfile
 import unittest
 
+import pandas as pd
+
 from qihuo_signal.config import load_settings
 from qihuo_signal.data_sources import SyntheticProvider
 from qihuo_signal.storage import LocalStore
@@ -19,7 +21,30 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(len(loaded), len(bars))
             self.assertEqual(loaded.iloc[0]["symbol"], "RB")
 
+    def test_daily_bars_merge_term_structure(self) -> None:
+        settings = load_settings("missing-test-config.yaml")
+        with tempfile.TemporaryDirectory() as tmp:
+            store = LocalStore(tmp)
+            bars = SyntheticProvider(bars=120).fetch_bars(settings.instruments["RB"], "1d")
+            store.write_bars("RB", "1d", bars, append=False)
+            term = pd.DataFrame(
+                {
+                    "timestamp": pd.to_datetime(bars["timestamp"].head(3)),
+                    "front_contract": ["RB2401", "RB2401", "RB2401"],
+                    "second_contract": ["RB2405", "RB2405", "RB2405"],
+                    "front_price": [100.0, 101.0, 102.0],
+                    "second_price": [99.0, 100.0, 101.0],
+                    "term_spread": [-0.01, -0.0099, -0.0098],
+                    "annualized_carry": [-0.03, -0.03, -0.03],
+                    "carry_signal": [0.03, 0.03, 0.03],
+                    "term_liquidity": [1000, 1100, 1200],
+                }
+            )
+            store.write_term_structure("RB", term, append=False)
+            loaded = store.read_bars("RB", "1d")
+            self.assertIn("carry_signal", loaded.columns)
+            self.assertEqual(float(loaded.iloc[0]["carry_signal"]), 0.03)
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -24,6 +24,7 @@ PatternName = Literal[
     "donchian_atr",
     "tsmom_vol",
     "vol_breakout",
+    "carry_tsmom",
 ]
 Side = Literal["long", "short", "both"]
 

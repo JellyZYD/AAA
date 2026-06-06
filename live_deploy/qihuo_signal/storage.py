@@ -18,6 +18,7 @@ class LocalStore:
         self.bars_root = self.parquet_root / "bars"
         self.events_root = self.parquet_root / "events"
         self.signals_root = self.parquet_root / "signals"
+        self.term_structure_root = self.parquet_root / "term_structure"
         self.backtest_root = self.root / "backtests"
         self.duckdb_path = self.root / "qihuo.duckdb"
 
@@ -26,6 +27,7 @@ class LocalStore:
             self.bars_root,
             self.events_root,
             self.signals_root,
+            self.term_structure_root,
             self.backtest_root,
         ]:
             path.mkdir(parents=True, exist_ok=True)
@@ -59,7 +61,57 @@ class LocalStore:
         path = self.bars_path(symbol, timeframe)
         if not path.exists():
             return pd.DataFrame()
-        return pd.read_parquet(path).sort_values("timestamp").reset_index(drop=True)
+        df = pd.read_parquet(path).sort_values("timestamp").reset_index(drop=True)
+        if timeframe == "1d":
+            term = self.read_term_structure(symbol)
+            if not term.empty:
+                factor_cols = [
+                    "timestamp",
+                    "front_contract",
+                    "second_contract",
+                    "front_price",
+                    "second_price",
+                    "term_spread",
+                    "annualized_carry",
+                    "carry_signal",
+                    "term_liquidity",
+                ]
+                available = [col for col in factor_cols if col in term.columns]
+                merged = pd.merge(df, term[available], on="timestamp", how="left")
+                return merged.sort_values("timestamp").reset_index(drop=True)
+        return df
+
+    def term_structure_path(self, symbol: str) -> Path:
+        return self.term_structure_root / f"{symbol}.parquet"
+
+    def write_term_structure(self, symbol: str, term: pd.DataFrame, append: bool = True) -> Path:
+        self.initialize()
+        path = self.term_structure_path(symbol)
+        df = term.copy()
+        if df.empty:
+            return path
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df["symbol"] = symbol
+        if append and path.exists() and path.stat().st_size > 0:
+            old = pd.read_parquet(path)
+            df = pd.concat([old, df], ignore_index=True)
+        df = df.drop_duplicates(subset=["symbol", "timestamp"], keep="last").sort_values("timestamp").reset_index(drop=True)
+        df.to_parquet(path, index=False)
+        self._sync_term_structure_duckdb()
+        return path
+
+    def read_term_structure(self, symbol: str | None = None) -> pd.DataFrame:
+        if symbol is not None:
+            path = self.term_structure_path(symbol)
+            if not path.exists() or path.stat().st_size == 0:
+                return pd.DataFrame()
+            return pd.read_parquet(path).sort_values("timestamp").reset_index(drop=True)
+        if not self.term_structure_root.exists():
+            return pd.DataFrame()
+        frames = [pd.read_parquet(path) for path in self.term_structure_root.glob("*.parquet") if path.stat().st_size > 0]
+        if not frames:
+            return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True).sort_values(["symbol", "timestamp"]).reset_index(drop=True)
 
     def available_bars(self) -> list[tuple[str, str]]:
         if not self.bars_root.exists():
@@ -190,6 +242,11 @@ class LocalStore:
                 self._rebuild_table_from_paths(con, "bars", self.bars_root.glob("*.parquet") if self.bars_root.exists() else [])
                 self._rebuild_table_from_paths(con, "events", self.events_root.glob("*.parquet") if self.events_root.exists() else [])
                 self._rebuild_table_from_paths(con, "signals", self.signals_root.glob("*.parquet") if self.signals_root.exists() else [])
+                self._rebuild_table_from_paths(
+                    con,
+                    "term_structure",
+                    self.term_structure_root.glob("*.parquet") if self.term_structure_root.exists() else [],
+                )
                 result_path = self.backtest_root / "results.parquet"
                 self._rebuild_table_from_paths(con, "backtest_results", [result_path] if result_path.exists() else [])
         except Exception:
@@ -236,6 +293,21 @@ class LocalStore:
     def _replace_table(self, table: str, df: pd.DataFrame) -> None:
         try:
             import duckdb
+        except Exception:
+            return
+
+    def _sync_term_structure_duckdb(self) -> None:
+        try:
+            import duckdb
+        except Exception:
+            return
+        try:
+            df = self.read_term_structure()
+            if df.empty:
+                return
+            with duckdb.connect(str(self.duckdb_path)) as con:
+                con.register("term_structure_df", df)
+                con.execute("CREATE OR REPLACE TABLE term_structure AS SELECT * FROM term_structure_df")
         except Exception:
             return
         try:

@@ -88,6 +88,8 @@ class StrategyEngine:
             return self._generate_tsmom_vol_actions(df, params, symbol, events, risk_filter)
         if params.pattern == "vol_breakout":
             return self._generate_vol_breakout_actions(df, params, symbol, events, risk_filter)
+        if params.pattern == "carry_tsmom":
+            return self._generate_carry_tsmom_actions(df, params, symbol, events, risk_filter)
         raise ValueError(f"unknown pattern: {params.pattern}")
 
     def _generate_swing_actions(
@@ -573,6 +575,93 @@ class StrategyEngine:
                     entry_index = i
         return actions
 
+    def _generate_carry_tsmom_actions(
+        self,
+        df: pd.DataFrame,
+        params: StrategyParams,
+        symbol: str,
+        events: pd.DataFrame | None,
+        risk_filter: RiskFilter | None,
+    ) -> list[StrategyAction]:
+        if "carry_signal" not in df.columns:
+            return []
+        df = df.copy()
+        df["_atr"] = self._atr(df, params.atr_period)
+        one_bar_returns = df["close"].pct_change()
+        lookback_return = df["close"].pct_change(params.momentum_lookback)
+        period_vol = one_bar_returns.rolling(params.vol_lookback, min_periods=params.vol_lookback).std()
+        period_vol = period_vol * math.sqrt(max(1, params.momentum_lookback))
+        df["_ts_score"] = lookback_return / period_vol.where(period_vol > 0)
+        df["_carry_signal"] = pd.to_numeric(df["carry_signal"], errors="coerce").shift(1)
+
+        actions: list[StrategyAction] = []
+        position = 0
+        stop_price: float | None = None
+        entry_index = -1
+        cooldown = 0
+        min_index = max(params.momentum_lookback, params.vol_lookback, params.atr_period) + 1
+
+        for i, row in df.iterrows():
+            if i < min_index:
+                continue
+            if cooldown > 0:
+                cooldown -= 1
+            ts = pd.Timestamp(row["timestamp"])
+            close = float(row["close"])
+            high = float(row["high"])
+            low = float(row["low"])
+            atr = float(row["_atr"]) if pd.notna(row["_atr"]) else 0.0
+            score = float(row["_ts_score"]) if pd.notna(row["_ts_score"]) else 0.0
+            carry = float(row["_carry_signal"]) if pd.notna(row["_carry_signal"]) else 0.0
+            if atr <= 0 or carry == 0:
+                continue
+            bias = event_bias(events, symbol, ts) if events is not None else 0.0
+
+            if position == 1:
+                stop_price = max(stop_price or -math.inf, close - params.atr_mult * atr)
+                if low <= stop_price:
+                    actions.append(self._action(i, ts, "CLOSE_LONG", stop_price, "carry tsmom long ATR trailing stop", stop_price, 0.53, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                elif score <= 0 or carry < 0 or i - entry_index >= params.max_hold_bars:
+                    actions.append(self._action(i, ts, "CLOSE_LONG", close, "carry tsmom long factor faded", stop_price, 0.55, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                continue
+            if position == -1:
+                stop_price = min(stop_price or math.inf, close + params.atr_mult * atr)
+                if high >= stop_price:
+                    actions.append(self._action(i, ts, "CLOSE_SHORT", stop_price, "carry tsmom short ATR trailing stop", stop_price, 0.53, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                elif score >= 0 or carry > 0 or i - entry_index >= params.max_hold_bars:
+                    actions.append(self._action(i, ts, "CLOSE_SHORT", close, "carry tsmom short factor faded", stop_price, 0.55, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                continue
+            if cooldown > 0:
+                continue
+
+            if params.side in {"long", "both"} and score >= params.score_threshold and carry > 0:
+                stop = close - params.atr_mult * atr
+                reason = f"positive momentum {score:.2f} with backwardation carry {carry:.2%}"
+                action = self._action(i, ts, "OPEN_LONG", close, reason, stop, 0.61, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = 1
+                    stop_price = stop
+                    entry_index = i
+            elif params.side in {"short", "both"} and score <= -params.score_threshold and carry < 0:
+                stop = close + params.atr_mult * atr
+                reason = f"negative momentum {score:.2f} with contango carry {carry:.2%}"
+                action = self._action(i, ts, "OPEN_SHORT", close, reason, stop, 0.61, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = -1
+                    stop_price = stop
+                    entry_index = i
+        return actions
+
     def _long_setup(
         self,
         confirmed: list[Pivot],
@@ -698,7 +787,16 @@ def build_param_grid(
 ) -> list[StrategyParams]:
     selected_patterns = list(
         patterns
-        or ("swing_reversal", "breakout", "failed_breakout", "trend_failure", "donchian_atr", "tsmom_vol", "vol_breakout")
+        or (
+            "swing_reversal",
+            "breakout",
+            "failed_breakout",
+            "trend_failure",
+            "donchian_atr",
+            "tsmom_vol",
+            "vol_breakout",
+            "carry_tsmom",
+        )
     )
     windows = [2, 3] if fast else [2, 3, 4]
     swing_pcts = [0.004, 0.008] if fast else [0.003, 0.006, 0.01]
@@ -776,7 +874,9 @@ def build_param_grid(
                                                                 risk_mode=risk_mode,  # type: ignore[arg-type]
                                                             )
                                                         )
-                        elif pattern == "tsmom_vol":
+                        elif pattern in {"tsmom_vol", "carry_tsmom"}:
+                            if pattern == "carry_tsmom" and timeframe != "1d":
+                                continue
                             for momentum_lookback in momentum_lookbacks:
                                 for vol_lookback in vol_lookbacks:
                                     for threshold in score_thresholds:

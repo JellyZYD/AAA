@@ -57,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
             "donchian_atr",
             "tsmom_vol",
             "vol_breakout",
+            "carry_tsmom",
         ],
         help="Limit search to one or more strategy patterns",
     )
@@ -66,7 +67,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("analyze", help="Generate report and champion strategies")
 
     refine_p = sub.add_parser("refine", help="Run local parameter perturbation and rolling validation")
-    refine_p.add_argument("--pattern", action="append", choices=["donchian_atr", "tsmom_vol", "vol_breakout"], help="Pattern to refine")
+    refine_p.add_argument(
+        "--pattern",
+        action="append",
+        choices=["donchian_atr", "tsmom_vol", "vol_breakout", "carry_tsmom"],
+        help="Pattern to refine",
+    )
     refine_p.add_argument("--max-per-symbol", type=int, default=40)
     refine_p.add_argument("--rolling-windows", type=int, default=4)
     refine_p.add_argument("--top-seeds-per-symbol", type=int, default=3)
@@ -74,6 +80,11 @@ def main(argv: list[str] | None = None) -> int:
     wf_p = sub.add_parser("walk-forward", help="Run causal walk-forward validation from refined candidates")
     wf_p.add_argument("--folds", type=int, default=5)
     wf_p.add_argument("--max-per-symbol", type=int, default=12)
+
+    term_p = sub.add_parser("fetch-term-structure", help="Fetch single-contract daily data and build local carry factors")
+    term_p.add_argument("--symbol", action="append", help="Limit to one or more symbols")
+    term_p.add_argument("--start-year", type=int, default=2023)
+    term_p.add_argument("--end-year", type=int, default=None)
 
     poll_p = sub.add_parser("poll", help="Poll latest bars and send signals")
     poll_p.add_argument("--once", action="store_true")
@@ -241,6 +252,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"refinement report: {report_path}")
         print(f"refined candidates: {len(evaluations)}")
+        return 0
+
+    if args.command == "fetch-term-structure":
+        from .term_structure import fetch_and_store_term_structure
+
+        provider = _akshare_provider()
+        stats = fetch_and_store_term_structure(
+            provider,
+            settings,
+            store,
+            symbols=tuple(args.symbol) if args.symbol else None,
+            start_year=args.start_year,
+            end_year=args.end_year,
+        )
+        for item in stats:
+            print(
+                f"{item.symbol}: rows={item.rows}, contracts={item.contracts_loaded}/{item.contracts_tried}, "
+                f"range={item.start}..{item.end}"
+            )
         return 0
 
     if args.command == "walk-forward":

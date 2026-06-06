@@ -144,8 +144,15 @@ def _load_candidates(reports: Path, store: LocalStore, settings: Settings, max_p
     if frame.empty:
         raise RuntimeError("No refined or backtest candidates found. Run qihuo backtest --search first.")
     frame = frame.drop_duplicates(subset=["symbol", "strategy_id"])
+    if "pattern" not in frame.columns:
+        frame["pattern"] = None
+    missing_pattern = frame["pattern"].isna()
+    if missing_pattern.any():
+        frame.loc[missing_pattern, "pattern"] = frame.loc[missing_pattern, "params_json"].apply(
+            lambda value: json.loads(str(value)).get("pattern")
+        )
     frame["robust_score"] = pd.to_numeric(frame["robust_score"], errors="coerce").fillna(0.0)
-    frame["rank"] = frame.groupby(["symbol", "timeframe"])["robust_score"].rank(method="first", ascending=False)
+    frame["rank"] = frame.groupby(["symbol", "timeframe", "pattern"])["robust_score"].rank(method="first", ascending=False)
     return frame[frame["rank"] <= max_per_symbol].copy()
 
 
@@ -156,7 +163,7 @@ def _load_backtest_candidates(store: LocalStore, settings: Settings) -> pd.DataF
     frame = results.copy()
     frame["params"] = frame["params_json"].apply(json.loads)
     frame["pattern"] = frame["params"].apply(lambda item: item.get("pattern") if isinstance(item, dict) else None)
-    frame = frame[frame["pattern"].isin({"donchian_atr", "tsmom_vol", "vol_breakout"})].copy()
+    frame = frame[frame["pattern"].isin({"donchian_atr", "tsmom_vol", "vol_breakout", "carry_tsmom"})].copy()
     if frame.empty:
         return pd.DataFrame()
     frame["overfit_flag"] = frame.get("overfit_flag", False).astype(bool)

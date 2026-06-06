@@ -37,7 +37,7 @@ def refine_strategies(
     store: LocalStore,
     settings: Settings,
     reports_root: str | Path,
-    patterns: tuple[str, ...] = ("donchian_atr", "tsmom_vol", "vol_breakout"),
+    patterns: tuple[str, ...] = ("donchian_atr", "tsmom_vol", "vol_breakout", "carry_tsmom"),
     max_per_symbol: int = 40,
     rolling_windows: int = 4,
     top_seeds_per_symbol: int = 3,
@@ -191,7 +191,7 @@ def _perturb(params: StrategyParams) -> list[StrategyParams]:
                                             )
                                         )
         return _sort_by_distance(params, rows)
-    if params.pattern == "tsmom_vol":
+    if params.pattern in {"tsmom_vol", "carry_tsmom"}:
         momentums = _near_int(params.momentum_lookback, [16, 24, 32, 48, 64, 96])
         vols = _near_int(params.vol_lookback, [16, 24, 32, 48, 64, 96])
         thresholds = _near_float(params.score_threshold, [0.2, 0.3, 0.4, 0.6, 0.8, 1.0])

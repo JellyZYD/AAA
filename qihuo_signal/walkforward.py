@@ -12,6 +12,12 @@ from .models import BacktestResult, Settings, StrategyParams
 from .storage import LocalStore
 
 
+MIN_ACTIVE_POSITIVE_RATE = 0.75
+MIN_ACTIVE_RETURN_DRAWDOWN = 1.2
+MIN_ACTIVE_TEST_NET = 500.0
+MAX_ACTIVE_DRAWDOWN_FRACTION = 0.8
+
+
 @dataclass(frozen=True)
 class WalkForwardRow:
     symbol: str
@@ -375,8 +381,16 @@ def _summarize_symbol(
     positive_rate = positive / len(rows)
     selected = _select_full_history_candidate(symbol, candidates, bars, settings, backtester, events)
     params, selected_score = selected
-    drawdown_ok = abs(worst_dd) <= settings.capital
-    active = total > 0 and positive_rate >= 0.5 and drawdown_ok and trades >= settings.backtest.min_trades_for_champion
+    drawdown_abs = abs(worst_dd)
+    reward_drawdown = total / drawdown_abs if drawdown_abs > 1e-9 else float("inf") if total > 0 else 0.0
+    drawdown_ok = drawdown_abs <= settings.capital * MAX_ACTIVE_DRAWDOWN_FRACTION
+    active = (
+        total >= MIN_ACTIVE_TEST_NET
+        and positive_rate >= MIN_ACTIVE_POSITIVE_RATE
+        and reward_drawdown >= MIN_ACTIVE_RETURN_DRAWDOWN
+        and drawdown_ok
+        and trades >= settings.backtest.min_trades_for_champion
+    )
     score = (
         total * 2.0
         + positive_rate * settings.capital * 2.0
@@ -384,7 +398,14 @@ def _summarize_symbol(
         + min(min_net, 0.0) * 2.0
         - abs(worst_dd) * 1.2
     )
-    reason = "walk-forward positive and capital-safe" if active else "walk-forward failed positivity or capital safety filter"
+    reason = (
+        "walk-forward positive, stable, and reward/drawdown qualified"
+        if active
+        else (
+            "walk-forward rejected: requires positive_rate>=75%, "
+            "net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital"
+        )
+    )
     return WalkForwardSummary(
         symbol=symbol,
         status="active" if active else "observe",

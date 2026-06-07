@@ -2590,11 +2590,11 @@
   },
   "walk_forward": {
     "C": {
-      "status": "active",
-      "reason": "walk-forward positive and capital-safe",
+      "status": "observe",
+      "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
       "best": {
         "symbol": "C",
-        "status": "active",
+        "status": "observe",
         "selected_strategy_id": "breakout|both|15m|w3|sw0.006|br0.003|lb16|sl0.015|mh64|cd4|atr14|am2.5|ex12|mom48|vol48|th0.4|strict",
         "pattern": "breakout",
         "timeframe": "15m",
@@ -2604,11 +2604,11 @@
         "total_test_net_pnl": 280.846,
         "avg_test_net_pnl": 70.2115,
         "min_window_net_pnl": -72.31700000000001,
-        "worst_test_drawdown": -252.31700000000092,
+        "worst_test_drawdown": -252.3170000000009,
         "avg_test_win_rate": 0.6,
         "total_test_trades": 8,
         "walk_forward_score": 19326.34927,
-        "reason": "walk-forward positive and capital-safe",
+        "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
         "params_json": "{\"atr_mult\": 2.5, \"atr_period\": 14, \"breakout_pct\": 0.003, \"cooldown_bars\": 4, \"exit_lookback\": 12, \"max_hold_bars\": 64, \"min_swing_pct\": 0.006, \"momentum_lookback\": 48, \"news_weight\": 0.2, \"pattern\": \"breakout\", \"range_lookback\": 16, \"risk_mode\": \"strict\", \"score_threshold\": 0.4, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"15m\", \"vol_lookback\": 48}",
         "params": {
           "atr_mult": 2.5,
@@ -2634,25 +2634,25 @@
       }
     },
     "CJ": {
-      "status": "active",
-      "reason": "walk-forward positive and capital-safe",
+      "status": "observe",
+      "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
       "best": {
         "symbol": "CJ",
-        "status": "active",
+        "status": "observe",
         "selected_strategy_id": "vol_breakout|both|15m|w3|sw0.006|br0.0015|lb32|sl0.015|mh32|cd4|atr14|am3|ex16|mom48|vol48|th0.9|strict",
         "pattern": "vol_breakout",
         "timeframe": "15m",
         "windows": 4,
         "positive_windows": 2,
         "positive_rate": 0.5,
-        "total_test_net_pnl": 1016.0274999999999,
-        "avg_test_net_pnl": 254.00687499999998,
+        "total_test_net_pnl": 1016.0275,
+        "avg_test_net_pnl": 254.006875,
         "min_window_net_pnl": -692.9325,
         "worst_test_drawdown": -1113.9550000000008,
-        "avg_test_win_rate": 0.35416666666666663,
+        "avg_test_win_rate": 0.3541666666666666,
         "total_test_trades": 13,
-        "walk_forward_score": 11972.899050009539,
-        "reason": "walk-forward positive and capital-safe",
+        "walk_forward_score": 11972.89905000954,
+        "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
         "params_json": "{\"atr_mult\": 3.0, \"atr_period\": 14, \"breakout_pct\": 0.0015, \"cooldown_bars\": 4, \"exit_lookback\": 16, \"max_hold_bars\": 32, \"min_swing_pct\": 0.006, \"momentum_lookback\": 48, \"news_weight\": 0.2, \"pattern\": \"vol_breakout\", \"range_lookback\": 32, \"risk_mode\": \"strict\", \"score_threshold\": 0.9, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"15m\", \"vol_lookback\": 48}",
         "params": {
           "atr_mult": 3.0,
@@ -2678,11 +2678,11 @@
       }
     },
     "CS": {
-      "status": "active",
-      "reason": "walk-forward positive and capital-safe",
+      "status": "observe",
+      "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
       "best": {
         "symbol": "CS",
-        "status": "active",
+        "status": "observe",
         "selected_strategy_id": "swing_reversal|both|15m|w3|sw0.006|br0.0015|lb24|sl0.015|mh64|cd4|atr14|am2.5|ex12|mom48|vol48|th0.4|strict",
         "pattern": "swing_reversal",
         "timeframe": "15m",
@@ -2696,7 +2696,7 @@
         "avg_test_win_rate": 0.6666666666666666,
         "total_test_trades": 14,
         "walk_forward_score": 18766.565566666664,
-        "reason": "walk-forward positive and capital-safe",
+        "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
         "params_json": "{\"atr_mult\": 2.5, \"atr_period\": 14, \"breakout_pct\": 0.0015, \"cooldown_bars\": 4, \"exit_lookback\": 12, \"max_hold_bars\": 64, \"min_swing_pct\": 0.006, \"momentum_lookback\": 48, \"news_weight\": 0.2, \"pattern\": \"swing_reversal\", \"range_lookback\": 24, \"risk_mode\": \"strict\", \"score_threshold\": 0.4, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"15m\", \"vol_lookback\": 48}",
         "params": {
           "atr_mult": 2.5,
@@ -2723,7 +2723,7 @@
     },
     "FG": {
       "status": "observe",
-      "reason": "walk-forward failed positivity or capital safety filter",
+      "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
       "best": {
         "symbol": "FG",
         "status": "observe",
@@ -2734,13 +2734,13 @@
         "positive_windows": 2,
         "positive_rate": 0.5,
         "total_test_net_pnl": -796.4000000000001,
-        "avg_test_net_pnl": -199.10000000000002,
+        "avg_test_net_pnl": -199.1,
         "min_window_net_pnl": -1568.1440000000002,
         "worst_test_drawdown": -1656.2599999999993,
         "avg_test_win_rate": 0.375,
         "total_test_trades": 8,
         "walk_forward_score": 6450.195740000001,
-        "reason": "walk-forward failed positivity or capital safety filter",
+        "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
         "params_json": "{\"atr_mult\": 2.0, \"atr_period\": 14, \"breakout_pct\": 0.0015, \"cooldown_bars\": 4, \"exit_lookback\": 16, \"max_hold_bars\": 64, \"min_swing_pct\": 0.006, \"momentum_lookback\": 48, \"news_weight\": 0.2, \"pattern\": \"vol_breakout\", \"range_lookback\": 32, \"risk_mode\": \"strict\", \"score_threshold\": 0.9, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"60m\", \"vol_lookback\": 48}",
         "params": {
           "atr_mult": 2.0,
@@ -2767,7 +2767,7 @@
     },
     "HC": {
       "status": "active",
-      "reason": "walk-forward positive and capital-safe",
+      "reason": "walk-forward positive, stable, and reward/drawdown qualified",
       "best": {
         "symbol": "HC",
         "status": "active",
@@ -2784,7 +2784,7 @@
         "avg_test_win_rate": 0.5454004329004328,
         "total_test_trades": 59,
         "walk_forward_score": 49015.36492863819,
-        "reason": "walk-forward positive and capital-safe",
+        "reason": "walk-forward positive, stable, and reward/drawdown qualified",
         "params_json": "{\"atr_mult\": 2.0, \"atr_period\": 14, \"breakout_pct\": 0.002, \"cooldown_bars\": 4, \"exit_lookback\": 12, \"max_hold_bars\": 64, \"min_swing_pct\": 0.006, \"momentum_lookback\": 24, \"news_weight\": 0.2, \"pattern\": \"tsmom_vol\", \"range_lookback\": 24, \"risk_mode\": \"strict\", \"score_threshold\": 0.4, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"1d\", \"vol_lookback\": 24}",
         "params": {
           "atr_mult": 2.0,
@@ -2810,11 +2810,11 @@
       }
     },
     "RB": {
-      "status": "active",
-      "reason": "walk-forward positive and capital-safe",
+      "status": "observe",
+      "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
       "best": {
         "symbol": "RB",
-        "status": "active",
+        "status": "observe",
         "selected_strategy_id": "donchian_atr|both|1d|w3|sw0.006|br0.0015|lb16|sl0.015|mh32|cd4|atr14|am2|ex12|mom48|vol48|th0.4|strict",
         "pattern": "donchian_atr",
         "timeframe": "1d",
@@ -2822,13 +2822,13 @@
         "positive_windows": 2,
         "positive_rate": 0.5,
         "total_test_net_pnl": 6055.555000000002,
-        "avg_test_net_pnl": 1513.8887500000005,
+        "avg_test_net_pnl": 1513.8887500000003,
         "min_window_net_pnl": -1684.4199999999996,
         "worst_test_drawdown": -6009.802,
         "avg_test_win_rate": 0.3792929292929293,
         "total_test_trades": 73,
-        "walk_forward_score": 15414.357715713253,
-        "reason": "walk-forward positive and capital-safe",
+        "walk_forward_score": 15414.357715713251,
+        "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
         "params_json": "{\"atr_mult\": 2.0, \"atr_period\": 14, \"breakout_pct\": 0.0015, \"cooldown_bars\": 4, \"exit_lookback\": 12, \"max_hold_bars\": 32, \"min_swing_pct\": 0.006, \"momentum_lookback\": 48, \"news_weight\": 0.2, \"pattern\": \"donchian_atr\", \"range_lookback\": 16, \"risk_mode\": \"strict\", \"score_threshold\": 0.4, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"1d\", \"vol_lookback\": 48}",
         "params": {
           "atr_mult": 2.0,
@@ -2854,11 +2854,11 @@
       }
     },
     "RM": {
-      "status": "active",
-      "reason": "walk-forward positive and capital-safe",
+      "status": "observe",
+      "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
       "best": {
         "symbol": "RM",
-        "status": "active",
+        "status": "observe",
         "selected_strategy_id": "vol_breakout|both|60m|w3|sw0.006|br0.0015|lb32|sl0.015|mh32|cd4|atr14|am2|ex16|mom48|vol48|th0.9|strict",
         "pattern": "vol_breakout",
         "timeframe": "60m",
@@ -2872,7 +2872,7 @@
         "avg_test_win_rate": 0.3464285714285714,
         "total_test_trades": 16,
         "walk_forward_score": 14318.883447142858,
-        "reason": "walk-forward positive and capital-safe",
+        "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
         "params_json": "{\"atr_mult\": 2.0, \"atr_period\": 14, \"breakout_pct\": 0.0015, \"cooldown_bars\": 4, \"exit_lookback\": 16, \"max_hold_bars\": 32, \"min_swing_pct\": 0.006, \"momentum_lookback\": 48, \"news_weight\": 0.2, \"pattern\": \"vol_breakout\", \"range_lookback\": 32, \"risk_mode\": \"strict\", \"score_threshold\": 0.9, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"60m\", \"vol_lookback\": 48}",
         "params": {
           "atr_mult": 2.0,
@@ -2899,7 +2899,7 @@
     },
     "SA": {
       "status": "active",
-      "reason": "walk-forward positive and capital-safe",
+      "reason": "walk-forward positive, stable, and reward/drawdown qualified",
       "best": {
         "symbol": "SA",
         "status": "active",
@@ -2916,7 +2916,7 @@
         "avg_test_win_rate": 0.625,
         "total_test_trades": 15,
         "walk_forward_score": 22440.35008112471,
-        "reason": "walk-forward positive and capital-safe",
+        "reason": "walk-forward positive, stable, and reward/drawdown qualified",
         "params_json": "{\"atr_mult\": 3.0, \"atr_period\": 14, \"breakout_pct\": 0.0015, \"cooldown_bars\": 4, \"exit_lookback\": 12, \"max_hold_bars\": 32, \"min_swing_pct\": 0.006, \"momentum_lookback\": 48, \"news_weight\": 0.2, \"pattern\": \"donchian_atr\", \"range_lookback\": 16, \"risk_mode\": \"strict\", \"score_threshold\": 0.4, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"60m\", \"vol_lookback\": 48}",
         "params": {
           "atr_mult": 3.0,
@@ -2942,11 +2942,11 @@
       }
     },
     "SP": {
-      "status": "active",
-      "reason": "walk-forward positive and capital-safe",
+      "status": "observe",
+      "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
       "best": {
         "symbol": "SP",
-        "status": "active",
+        "status": "observe",
         "selected_strategy_id": "vol_breakout|both|1d|w3|sw0.006|br0.0015|lb16|sl0.015|mh64|cd4|atr14|am2|ex16|mom48|vol48|th0.9|strict",
         "pattern": "vol_breakout",
         "timeframe": "1d",
@@ -2960,7 +2960,7 @@
         "avg_test_win_rate": 0.35,
         "total_test_trades": 9,
         "walk_forward_score": 27834.37568,
-        "reason": "walk-forward positive and capital-safe",
+        "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
         "params_json": "{\"atr_mult\": 2.0, \"atr_period\": 14, \"breakout_pct\": 0.0015, \"cooldown_bars\": 4, \"exit_lookback\": 16, \"max_hold_bars\": 64, \"min_swing_pct\": 0.006, \"momentum_lookback\": 48, \"news_weight\": 0.2, \"pattern\": \"vol_breakout\", \"range_lookback\": 16, \"risk_mode\": \"strict\", \"score_threshold\": 0.9, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"1d\", \"vol_lookback\": 48}",
         "params": {
           "atr_mult": 2.0,
@@ -2987,7 +2987,7 @@
     },
     "SR": {
       "status": "active",
-      "reason": "walk-forward positive and capital-safe",
+      "reason": "walk-forward positive, stable, and reward/drawdown qualified",
       "best": {
         "symbol": "SR",
         "status": "active",
@@ -3000,11 +3000,11 @@
         "total_test_net_pnl": 1476.81,
         "avg_test_net_pnl": 369.2025,
         "min_window_net_pnl": -475.461,
-        "worst_test_drawdown": -495.46100000000024,
+        "worst_test_drawdown": -495.4610000000002,
         "avg_test_win_rate": 0.5,
         "total_test_trades": 8,
-        "walk_forward_score": 19621.414611974233,
-        "reason": "walk-forward positive and capital-safe",
+        "walk_forward_score": 19621.414611974236,
+        "reason": "walk-forward positive, stable, and reward/drawdown qualified",
         "params_json": "{\"atr_mult\": 2.0, \"atr_period\": 14, \"breakout_pct\": 0.0015, \"cooldown_bars\": 4, \"exit_lookback\": 16, \"max_hold_bars\": 32, \"min_swing_pct\": 0.006, \"momentum_lookback\": 48, \"news_weight\": 0.2, \"pattern\": \"vol_breakout\", \"range_lookback\": 32, \"risk_mode\": \"strict\", \"score_threshold\": 0.9, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"30m\", \"vol_lookback\": 48}",
         "params": {
           "atr_mult": 2.0,
@@ -3030,47 +3030,47 @@
       }
     },
     "UR": {
-      "status": "active",
-      "reason": "walk-forward positive and capital-safe",
+      "status": "observe",
+      "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
       "best": {
         "symbol": "UR",
-        "status": "active",
-        "selected_strategy_id": "vol_breakout|both|30m|w3|sw0.006|br0.0015|lb16|sl0.015|mh64|cd4|atr14|am3|ex16|mom48|vol48|th0.75|strict",
-        "pattern": "vol_breakout",
-        "timeframe": "30m",
+        "status": "observe",
+        "selected_strategy_id": "carry_tsmom|both|1d|w3|sw0.006|br0.002|lb24|sl0.015|mh64|cd4|atr14|am3|ex12|mom48|vol48|th0.8|strict",
+        "pattern": "carry_tsmom",
+        "timeframe": "1d",
         "windows": 4,
         "positive_windows": 3,
         "positive_rate": 0.75,
-        "total_test_net_pnl": 854.3560000000001,
-        "avg_test_net_pnl": 213.58900000000003,
-        "min_window_net_pnl": -927.3919999999999,
-        "worst_test_drawdown": -1040.0,
-        "avg_test_win_rate": 0.625,
-        "total_test_trades": 7,
-        "walk_forward_score": 18322.99668,
-        "reason": "walk-forward positive and capital-safe",
-        "params_json": "{\"atr_mult\": 3.0, \"atr_period\": 14, \"breakout_pct\": 0.0015, \"cooldown_bars\": 4, \"exit_lookback\": 16, \"max_hold_bars\": 64, \"min_swing_pct\": 0.006, \"momentum_lookback\": 48, \"news_weight\": 0.2, \"pattern\": \"vol_breakout\", \"range_lookback\": 16, \"risk_mode\": \"strict\", \"score_threshold\": 0.75, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"30m\", \"vol_lookback\": 48}",
+        "total_test_net_pnl": 20654.346,
+        "avg_test_net_pnl": 5163.5865,
+        "min_window_net_pnl": -7739.724000000002,
+        "worst_test_drawdown": -8513.948,
+        "avg_test_win_rate": 0.611111111111111,
+        "total_test_trades": 25,
+        "walk_forward_score": 34628.90577017615,
+        "reason": "walk-forward rejected: requires positive_rate>=75%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital",
+        "params_json": "{\"atr_mult\": 3.0, \"atr_period\": 14, \"breakout_pct\": 0.002, \"cooldown_bars\": 4, \"exit_lookback\": 12, \"max_hold_bars\": 64, \"min_swing_pct\": 0.006, \"momentum_lookback\": 48, \"news_weight\": 0.2, \"pattern\": \"carry_tsmom\", \"range_lookback\": 24, \"risk_mode\": \"strict\", \"score_threshold\": 0.8, \"side\": \"both\", \"stop_loss_pct\": 0.015, \"swing_window\": 3, \"timeframe\": \"1d\", \"vol_lookback\": 48}",
         "params": {
           "atr_mult": 3.0,
           "atr_period": 14,
-          "breakout_pct": 0.0015,
+          "breakout_pct": 0.002,
           "cooldown_bars": 4,
-          "exit_lookback": 16,
+          "exit_lookback": 12,
           "max_hold_bars": 64,
           "min_swing_pct": 0.006,
           "momentum_lookback": 48,
           "news_weight": 0.2,
-          "pattern": "vol_breakout",
-          "range_lookback": 16,
+          "pattern": "carry_tsmom",
+          "range_lookback": 24,
           "risk_mode": "strict",
-          "score_threshold": 0.75,
+          "score_threshold": 0.8,
           "side": "both",
           "stop_loss_pct": 0.015,
           "swing_window": 3,
-          "timeframe": "30m",
+          "timeframe": "1d",
           "vol_lookback": 48
         },
-        "strategy_id": "vol_breakout|both|30m|w3|sw0.006|br0.0015|lb16|sl0.015|mh64|cd4|atr14|am3|ex16|mom48|vol48|th0.75|strict"
+        "strategy_id": "carry_tsmom|both|1d|w3|sw0.006|br0.002|lb24|sl0.015|mh64|cd4|atr14|am3|ex12|mom48|vol48|th0.8|strict"
       }
     }
   }

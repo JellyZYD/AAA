@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, time as dt_time
 
 import pandas as pd
 
@@ -11,6 +11,33 @@ from .data_sources import AkShareProvider, SelectedContract
 from .models import InstrumentSpec, Settings, Signal, StrategyAction, StrategyParams
 from .storage import LocalStore
 from .strategy import StrategyEngine
+
+
+BAR_CLOSE_GRACE_SECONDS = 60
+DAILY_BAR_CLOSE_TIME = dt_time(15, 15)
+
+
+def closed_bars_only(bars: pd.DataFrame, timeframe: str, now: datetime | pd.Timestamp | None = None) -> pd.DataFrame:
+    """Return only bars that should be complete enough for live signals."""
+    if bars.empty or "timestamp" not in bars.columns:
+        return bars
+    df = bars.sort_values("timestamp").reset_index(drop=True)
+    timestamps = pd.to_datetime(df["timestamp"], errors="coerce")
+    now_ts = pd.Timestamp(now or datetime.now())
+    if now_ts.tzinfo is not None:
+        now_ts = now_ts.tz_convert(None)
+
+    if timeframe == "1d" or timeframe.endswith("d"):
+        today = now_ts.normalize()
+        bar_dates = timestamps.dt.normalize()
+        if now_ts.time() >= DAILY_BAR_CLOSE_TIME:
+            mask = bar_dates <= today
+        else:
+            mask = bar_dates < today
+        return df.loc[mask.fillna(False)].reset_index(drop=True)
+
+    cutoff = now_ts - pd.Timedelta(seconds=BAR_CLOSE_GRACE_SECONDS)
+    return df.loc[(timestamps <= cutoff).fillna(False)].reset_index(drop=True)
 
 
 class SignalPoller:
@@ -30,9 +57,9 @@ class SignalPoller:
         self.engine = StrategyEngine()
 
     def poll_once(self, include_watch: bool = False, update_data: bool = True) -> list[Signal]:
-        if update_data and self.provider is not None:
-            self.provider.update_recent(self.settings, self.store, timeframes=("15m",))
         champions = self._load_profile()
+        if update_data and self.provider is not None:
+            self.provider.update_recent(self.settings, self.store, timeframes=self._profile_timeframes(champions))
         events = self.store.read_events()
         signals: list[Signal] = []
         for rank, symbol in enumerate(self.settings.symbols, 1):
@@ -45,7 +72,7 @@ class SignalPoller:
             best = champion["best"]
             params_raw = best.get("params") or json.loads(best.get("params_json", "{}"))
             params = StrategyParams.from_dict(params_raw)
-            bars = self.store.read_bars(symbol, params.timeframe)
+            bars = closed_bars_only(self.store.read_bars(symbol, params.timeframe), params.timeframe)
             if bars.empty or len(bars) < 80:
                 if include_watch:
                     signals.append(self._watch_signal(symbol, spec, champion, "not enough local bars"))
@@ -110,6 +137,21 @@ class SignalPoller:
         if champions:
             return champions
         return {}
+
+    def _profile_timeframes(self, champions: dict) -> tuple[str, ...]:
+        timeframes: set[str] = set()
+        for champion in champions.values():
+            if champion.get("status") and champion.get("status") != "active":
+                continue
+            best = champion.get("best") or {}
+            params_raw = best.get("params") or json.loads(best.get("params_json", "{}"))
+            if not params_raw:
+                continue
+            try:
+                timeframes.add(StrategyParams.from_dict(params_raw).timeframe)
+            except Exception:
+                continue
+        return tuple(sorted(timeframes)) or ("15m",)
 
     def _to_signal(self, symbol: str, selected: SelectedContract, action: StrategyAction, best: dict, rank: int) -> Signal:
         risk = action.reason if action.action == "RISK_BLOCKED" else f"margin checked; contract selection: {selected.reason}"

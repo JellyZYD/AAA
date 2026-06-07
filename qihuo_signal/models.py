@@ -25,6 +25,9 @@ PatternName = Literal[
     "tsmom_vol",
     "vol_breakout",
     "carry_tsmom",
+    "quality_tsmom",
+    "ensemble_trend",
+    "trend_pullback",
 ]
 Side = Literal["long", "short", "both"]
 
@@ -124,6 +127,7 @@ class StrategyParams:
     momentum_lookback: int = 48
     vol_lookback: int = 48
     score_threshold: float = 0.4
+    trend_quality_threshold: float = 0.25
 
     @property
     def strategy_id(self) -> str:
@@ -144,9 +148,10 @@ class StrategyParams:
             f"mom{self.momentum_lookback}",
             f"vol{self.vol_lookback}",
             f"th{self.score_threshold:g}",
+            f"tq{self.trend_quality_threshold:g}" if self.pattern in {"quality_tsmom", "ensemble_trend", "trend_pullback"} else "",
             self.risk_mode,
         ]
-        return "|".join(str(v) for v in values)
+        return "|".join(str(v) for v in values if v != "")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -86,10 +86,16 @@ class StrategyEngine:
             return self._generate_donchian_atr_actions(df, params, symbol, events, risk_filter)
         if params.pattern == "tsmom_vol":
             return self._generate_tsmom_vol_actions(df, params, symbol, events, risk_filter)
+        if params.pattern == "quality_tsmom":
+            return self._generate_quality_tsmom_actions(df, params, symbol, events, risk_filter)
         if params.pattern == "vol_breakout":
             return self._generate_vol_breakout_actions(df, params, symbol, events, risk_filter)
         if params.pattern == "carry_tsmom":
             return self._generate_carry_tsmom_actions(df, params, symbol, events, risk_filter)
+        if params.pattern == "ensemble_trend":
+            return self._generate_ensemble_trend_actions(df, params, symbol, events, risk_filter)
+        if params.pattern == "trend_pullback":
+            return self._generate_trend_pullback_actions(df, params, symbol, events, risk_filter)
         raise ValueError(f"unknown pattern: {params.pattern}")
 
     def _generate_swing_actions(
@@ -480,6 +486,91 @@ class StrategyEngine:
                     entry_index = i
         return actions
 
+    def _generate_quality_tsmom_actions(
+        self,
+        df: pd.DataFrame,
+        params: StrategyParams,
+        symbol: str,
+        events: pd.DataFrame | None,
+        risk_filter: RiskFilter | None,
+    ) -> list[StrategyAction]:
+        df = df.copy()
+        df["_atr"] = self._atr(df, params.atr_period)
+        one_bar_returns = df["close"].pct_change()
+        lookback_return = df["close"].pct_change(params.momentum_lookback)
+        period_vol = one_bar_returns.rolling(params.vol_lookback, min_periods=params.vol_lookback).std()
+        period_vol = period_vol * math.sqrt(max(1, params.momentum_lookback))
+        df["_ts_score"] = lookback_return / period_vol.where(period_vol > 0)
+        df["_trend_quality"] = self._trend_efficiency(df["close"].astype(float), params.momentum_lookback)
+
+        actions: list[StrategyAction] = []
+        position = 0
+        stop_price: float | None = None
+        entry_index = -1
+        cooldown = 0
+        min_index = max(params.momentum_lookback, params.vol_lookback, params.atr_period)
+
+        for i, row in df.iterrows():
+            if i < min_index:
+                continue
+            if cooldown > 0:
+                cooldown -= 1
+            ts = pd.Timestamp(row["timestamp"])
+            close = float(row["close"])
+            high = float(row["high"])
+            low = float(row["low"])
+            atr = float(row["_atr"]) if pd.notna(row["_atr"]) else 0.0
+            score = float(row["_ts_score"]) if pd.notna(row["_ts_score"]) else 0.0
+            trend_quality = float(row["_trend_quality"]) if pd.notna(row.get("_trend_quality")) else 0.0
+            if atr <= 0:
+                continue
+            bias = event_bias(events, symbol, ts) if events is not None else 0.0
+
+            if position == 1:
+                stop_price = max(stop_price or -math.inf, close - params.atr_mult * atr)
+                if low <= stop_price:
+                    actions.append(self._action(i, ts, "CLOSE_LONG", stop_price, "quality tsmom long ATR stop", stop_price, 0.53, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                elif score <= 0 or i - entry_index >= params.max_hold_bars:
+                    actions.append(self._action(i, ts, "CLOSE_LONG", close, "quality tsmom long momentum faded", stop_price, 0.55, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                continue
+            if position == -1:
+                stop_price = min(stop_price or math.inf, close + params.atr_mult * atr)
+                if high >= stop_price:
+                    actions.append(self._action(i, ts, "CLOSE_SHORT", stop_price, "quality tsmom short ATR stop", stop_price, 0.53, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                elif score >= 0 or i - entry_index >= params.max_hold_bars:
+                    actions.append(self._action(i, ts, "CLOSE_SHORT", close, "quality tsmom short momentum faded", stop_price, 0.55, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                continue
+            if cooldown > 0 or trend_quality < params.trend_quality_threshold:
+                continue
+
+            if params.side in {"long", "both"} and score >= params.score_threshold:
+                stop = close - params.atr_mult * atr
+                reason = f"quality tsmom long: score {score:.2f}, trend quality {trend_quality:.2f}"
+                action = self._action(i, ts, "OPEN_LONG", close, reason, stop, 0.6, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = 1
+                    stop_price = stop
+                    entry_index = i
+            elif params.side in {"short", "both"} and score <= -params.score_threshold:
+                stop = close + params.atr_mult * atr
+                reason = f"quality tsmom short: score {score:.2f}, trend quality {trend_quality:.2f}"
+                action = self._action(i, ts, "OPEN_SHORT", close, reason, stop, 0.6, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = -1
+                    stop_price = stop
+                    entry_index = i
+        return actions
+
     def _generate_vol_breakout_actions(
         self,
         df: pd.DataFrame,
@@ -662,6 +753,253 @@ class StrategyEngine:
                     entry_index = i
         return actions
 
+    def _generate_ensemble_trend_actions(
+        self,
+        df: pd.DataFrame,
+        params: StrategyParams,
+        symbol: str,
+        events: pd.DataFrame | None,
+        risk_filter: RiskFilter | None,
+    ) -> list[StrategyAction]:
+        df = df.copy()
+        df["_atr"] = self._atr(df, params.atr_period)
+        short_lookback = max(2, params.momentum_lookback)
+        long_lookback = max(short_lookback + 1, params.range_lookback)
+        returns = df["close"].pct_change()
+        vol = returns.rolling(params.vol_lookback, min_periods=params.vol_lookback).std()
+        short_vol = vol * math.sqrt(short_lookback)
+        long_vol = vol * math.sqrt(long_lookback)
+        df["_short_score"] = df["close"].pct_change(short_lookback) / short_vol.where(short_vol > 0)
+        df["_long_score"] = df["close"].pct_change(long_lookback) / long_vol.where(long_vol > 0)
+        df["_trend_quality"] = self._trend_efficiency(df["close"].astype(float), long_lookback)
+        return self._generate_momentum_state_actions(
+            df,
+            params,
+            symbol,
+            events,
+            risk_filter,
+            min_index=max(long_lookback, params.range_lookback, params.exit_lookback, params.vol_lookback, params.atr_period),
+            require_breakout=True,
+        )
+
+    def _generate_trend_pullback_actions(
+        self,
+        df: pd.DataFrame,
+        params: StrategyParams,
+        symbol: str,
+        events: pd.DataFrame | None,
+        risk_filter: RiskFilter | None,
+    ) -> list[StrategyAction]:
+        df = df.copy()
+        df["_atr"] = self._atr(df, params.atr_period)
+        short_lookback = max(2, params.momentum_lookback)
+        long_lookback = max(short_lookback + 1, params.range_lookback)
+        returns = df["close"].pct_change()
+        vol = returns.rolling(params.vol_lookback, min_periods=params.vol_lookback).std()
+        short_vol = vol * math.sqrt(short_lookback)
+        long_vol = vol * math.sqrt(long_lookback)
+        df["_short_score"] = df["close"].pct_change(short_lookback) / short_vol.where(short_vol > 0)
+        df["_long_score"] = df["close"].pct_change(long_lookback) / long_vol.where(long_vol > 0)
+        df["_trend_quality"] = self._trend_efficiency(df["close"].astype(float), long_lookback)
+
+        actions: list[StrategyAction] = []
+        position = 0
+        stop_price: float | None = None
+        entry_index = -1
+        cooldown = 0
+        min_index = max(long_lookback, params.exit_lookback * 2, params.vol_lookback, params.atr_period)
+
+        for i, row in df.iterrows():
+            if i < min_index:
+                continue
+            if cooldown > 0:
+                cooldown -= 1
+            ts = pd.Timestamp(row["timestamp"])
+            close = float(row["close"])
+            high = float(row["high"])
+            low = float(row["low"])
+            atr = float(row["_atr"]) if pd.notna(row["_atr"]) else 0.0
+            short_score = float(row["_short_score"]) if pd.notna(row["_short_score"]) else 0.0
+            long_score = float(row["_long_score"]) if pd.notna(row["_long_score"]) else 0.0
+            trend_quality = float(row["_trend_quality"]) if pd.notna(row.get("_trend_quality")) else 0.0
+            if atr <= 0:
+                continue
+            trend_prior = df.iloc[i - params.range_lookback : i]
+            pullback_prior = df.iloc[i - params.exit_lookback : i]
+            if trend_prior.empty or pullback_prior.empty:
+                continue
+            trend_high = float(trend_prior["high"].max())
+            trend_low = float(trend_prior["low"].min())
+            pullback_high = float(pullback_prior["high"].max())
+            pullback_low = float(pullback_prior["low"].min())
+            bias = event_bias(events, symbol, ts) if events is not None else 0.0
+
+            if position == 1:
+                stop_price = max(stop_price or -math.inf, close - params.atr_mult * atr)
+                action = None
+                if stop_price is not None and low <= stop_price:
+                    action = self._action(i, ts, "CLOSE_LONG", stop_price, "trend pullback long ATR stop", stop_price, 0.54, bias)
+                elif short_score <= 0 or close < pullback_low or i - entry_index >= params.max_hold_bars:
+                    action = self._action(i, ts, "CLOSE_LONG", close, "trend pullback long momentum/pullback exit", stop_price, 0.55, bias)
+                if action is not None:
+                    actions.append(action)
+                    position = 0
+                    stop_price = None
+                    cooldown = params.cooldown_bars
+                continue
+
+            if position == -1:
+                stop_price = min(stop_price or math.inf, close + params.atr_mult * atr)
+                action = None
+                if stop_price is not None and high >= stop_price:
+                    action = self._action(i, ts, "CLOSE_SHORT", stop_price, "trend pullback short ATR stop", stop_price, 0.54, bias)
+                elif short_score >= 0 or close > pullback_high or i - entry_index >= params.max_hold_bars:
+                    action = self._action(i, ts, "CLOSE_SHORT", close, "trend pullback short momentum/pullback exit", stop_price, 0.55, bias)
+                if action is not None:
+                    actions.append(action)
+                    position = 0
+                    stop_price = None
+                    cooldown = params.cooldown_bars
+                continue
+
+            if cooldown > 0 or trend_quality < params.trend_quality_threshold:
+                continue
+
+            trend_range = max(trend_high - trend_low, atr)
+            long_trend = long_score >= params.score_threshold * 0.5 and short_score > 0
+            short_trend = long_score <= -params.score_threshold * 0.5 and short_score < 0
+            long_pullback = pullback_low <= trend_high - max(atr, trend_range * params.breakout_pct)
+            short_pullback = pullback_high >= trend_low + max(atr, trend_range * params.breakout_pct)
+
+            if params.side in {"long", "both"} and long_trend and long_pullback and close > pullback_high * (1 + params.breakout_pct):
+                stop = pullback_low - 0.5 * atr
+                reason = (
+                    f"trend pullback long: long score {long_score:.2f}, "
+                    f"short score {short_score:.2f}, trend quality {trend_quality:.2f}"
+                )
+                action = self._action(i, ts, "OPEN_LONG", close, reason, stop, 0.62, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = 1
+                    stop_price = stop
+                    entry_index = i
+            elif params.side in {"short", "both"} and short_trend and short_pullback and close < pullback_low * (1 - params.breakout_pct):
+                stop = pullback_high + 0.5 * atr
+                reason = (
+                    f"trend pullback short: long score {long_score:.2f}, "
+                    f"short score {short_score:.2f}, trend quality {trend_quality:.2f}"
+                )
+                action = self._action(i, ts, "OPEN_SHORT", close, reason, stop, 0.62, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = -1
+                    stop_price = stop
+                    entry_index = i
+        return actions
+
+    def _generate_momentum_state_actions(
+        self,
+        df: pd.DataFrame,
+        params: StrategyParams,
+        symbol: str,
+        events: pd.DataFrame | None,
+        risk_filter: RiskFilter | None,
+        min_index: int,
+        require_breakout: bool,
+    ) -> list[StrategyAction]:
+        actions: list[StrategyAction] = []
+        position = 0
+        stop_price: float | None = None
+        entry_index = -1
+        cooldown = 0
+
+        for i, row in df.iterrows():
+            if i < min_index:
+                continue
+            if cooldown > 0:
+                cooldown -= 1
+            ts = pd.Timestamp(row["timestamp"])
+            close = float(row["close"])
+            high = float(row["high"])
+            low = float(row["low"])
+            atr = float(row["_atr"]) if pd.notna(row["_atr"]) else 0.0
+            short_score = float(row["_short_score"]) if pd.notna(row["_short_score"]) else 0.0
+            long_score = float(row["_long_score"]) if pd.notna(row["_long_score"]) else 0.0
+            trend_quality = float(row["_trend_quality"]) if pd.notna(row.get("_trend_quality")) else 0.0
+            if atr <= 0:
+                continue
+            prior = df.iloc[i - params.range_lookback : i]
+            exit_prior = df.iloc[i - params.exit_lookback : i]
+            channel_high = float(prior["high"].max()) if not prior.empty else math.inf
+            channel_low = float(prior["low"].min()) if not prior.empty else -math.inf
+            exit_high = float(exit_prior["high"].max()) if not exit_prior.empty else math.inf
+            exit_low = float(exit_prior["low"].min()) if not exit_prior.empty else -math.inf
+            bias = event_bias(events, symbol, ts) if events is not None else 0.0
+
+            if position == 1:
+                stop_price = max(stop_price or -math.inf, close - params.atr_mult * atr)
+                action = None
+                if stop_price is not None and low <= stop_price:
+                    action = self._action(i, ts, "CLOSE_LONG", stop_price, "ensemble trend long ATR stop", stop_price, 0.54, bias)
+                elif short_score <= 0 or close < exit_low or i - entry_index >= params.max_hold_bars:
+                    action = self._action(i, ts, "CLOSE_LONG", close, "ensemble trend long momentum/channel exit", stop_price, 0.55, bias)
+                if action is not None:
+                    actions.append(action)
+                    position = 0
+                    stop_price = None
+                    cooldown = params.cooldown_bars
+                continue
+
+            if position == -1:
+                stop_price = min(stop_price or math.inf, close + params.atr_mult * atr)
+                action = None
+                if stop_price is not None and high >= stop_price:
+                    action = self._action(i, ts, "CLOSE_SHORT", stop_price, "ensemble trend short ATR stop", stop_price, 0.54, bias)
+                elif short_score >= 0 or close > exit_high or i - entry_index >= params.max_hold_bars:
+                    action = self._action(i, ts, "CLOSE_SHORT", close, "ensemble trend short momentum/channel exit", stop_price, 0.55, bias)
+                if action is not None:
+                    actions.append(action)
+                    position = 0
+                    stop_price = None
+                    cooldown = params.cooldown_bars
+                continue
+
+            if cooldown > 0:
+                continue
+
+            quality_ok = trend_quality >= params.trend_quality_threshold
+            long_ok = short_score >= params.score_threshold and long_score >= params.score_threshold * 0.5 and quality_ok
+            short_ok = short_score <= -params.score_threshold and long_score <= -params.score_threshold * 0.5 and quality_ok
+            if require_breakout:
+                long_ok = long_ok and close > channel_high * (1 + params.breakout_pct)
+                short_ok = short_ok and close < channel_low * (1 - params.breakout_pct)
+
+            if params.side in {"long", "both"} and long_ok:
+                stop = close - params.atr_mult * atr
+                reason = (
+                    f"ensemble trend long: short score {short_score:.2f}, "
+                    f"long score {long_score:.2f}, trend quality {trend_quality:.2f}"
+                )
+                action = self._action(i, ts, "OPEN_LONG", close, reason, stop, 0.63 if require_breakout else 0.6, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = 1
+                    stop_price = stop
+                    entry_index = i
+            elif params.side in {"short", "both"} and short_ok:
+                stop = close + params.atr_mult * atr
+                reason = (
+                    f"ensemble trend short: short score {short_score:.2f}, "
+                    f"long score {long_score:.2f}, trend quality {trend_quality:.2f}"
+                )
+                action = self._action(i, ts, "OPEN_SHORT", close, reason, stop, 0.63 if require_breakout else 0.6, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = -1
+                    stop_price = stop
+                    entry_index = i
+        return actions
+
     def _long_setup(
         self,
         confirmed: list[Pivot],
@@ -737,6 +1075,11 @@ class StrategyEngine:
         ).max(axis=1)
         return true_range.rolling(period, min_periods=period).mean()
 
+    def _trend_efficiency(self, close: pd.Series, lookback: int) -> pd.Series:
+        directional_move = (close - close.shift(lookback)).abs()
+        path_length = close.diff().abs().rolling(lookback, min_periods=lookback).sum()
+        return directional_move / path_length.where(path_length > 0)
+
     def _action(
         self,
         index: int,
@@ -794,8 +1137,11 @@ def build_param_grid(
             "trend_failure",
             "donchian_atr",
             "tsmom_vol",
+            "quality_tsmom",
             "vol_breakout",
             "carry_tsmom",
+            "ensemble_trend",
+            "trend_pullback",
         )
     )
     windows = [2, 3] if fast else [2, 3, 4]
@@ -810,6 +1156,7 @@ def build_param_grid(
     vol_lookbacks = [24, 48] if fast else [24, 48, 96]
     score_thresholds = [0.4, 0.8] if fast else [0.3, 0.6, 0.9]
     compression_thresholds = [0.75, 0.9] if fast else [0.65, 0.8, 0.95]
+    trend_quality_thresholds = [0.2, 0.3] if fast else [0.18, 0.25, 0.35]
     risk_modes = ["strict", "signal", "aggressive"]
     params: list[StrategyParams] = []
     for timeframe in timeframes:
@@ -874,27 +1221,36 @@ def build_param_grid(
                                                                 risk_mode=risk_mode,  # type: ignore[arg-type]
                                                             )
                                                         )
-                        elif pattern in {"tsmom_vol", "carry_tsmom"}:
+                        elif pattern in {"tsmom_vol", "quality_tsmom", "carry_tsmom", "ensemble_trend", "trend_pullback"}:
                             if pattern == "carry_tsmom" and timeframe != "1d":
                                 continue
                             for momentum_lookback in momentum_lookbacks:
-                                for vol_lookback in vol_lookbacks:
-                                    for threshold in score_thresholds:
-                                        for atr_period in atr_periods:
-                                            for atr_mult in atr_mults:
-                                                for max_hold in max_holds:
-                                                    params.append(
-                                                        StrategyParams(
-                                                            pattern=pattern,  # type: ignore[arg-type]
-                                                            side=side,  # type: ignore[arg-type]
-                                                            timeframe=timeframe,
-                                                            momentum_lookback=momentum_lookback,
-                                                            vol_lookback=vol_lookback,
-                                                            score_threshold=threshold,
-                                                            atr_period=atr_period,
-                                                            atr_mult=atr_mult,
-                                                            max_hold_bars=max_hold,
-                                                            risk_mode=risk_mode,  # type: ignore[arg-type]
+                                for range_lookback in (range_lookbacks if pattern in {"ensemble_trend", "trend_pullback"} else [24]):
+                                    for vol_lookback in vol_lookbacks:
+                                        for threshold in score_thresholds:
+                                            for atr_period in atr_periods:
+                                                for atr_mult in atr_mults:
+                                                    for max_hold in max_holds:
+                                                        quality_thresholds = (
+                                                            trend_quality_thresholds
+                                                            if pattern in {"quality_tsmom", "ensemble_trend", "trend_pullback"}
+                                                            else [0.25]
                                                         )
-                                                    )
+                                                        for trend_quality_threshold in quality_thresholds:
+                                                            params.append(
+                                                                StrategyParams(
+                                                                    pattern=pattern,  # type: ignore[arg-type]
+                                                                    side=side,  # type: ignore[arg-type]
+                                                                    timeframe=timeframe,
+                                                                    range_lookback=range_lookback,
+                                                                    momentum_lookback=momentum_lookback,
+                                                                    vol_lookback=vol_lookback,
+                                                                    score_threshold=threshold,
+                                                                    atr_period=atr_period,
+                                                                    atr_mult=atr_mult,
+                                                                    max_hold_bars=max_hold,
+                                                                    trend_quality_threshold=trend_quality_threshold,
+                                                                    risk_mode=risk_mode,  # type: ignore[arg-type]
+                                                                )
+                                                            )
     return params

@@ -65,10 +65,12 @@ def run_walk_forward(
     folds: int = 5,
     max_per_symbol: int = 24,
     workers: int = 6,
+    patterns: tuple[str, ...] | None = None,
+    write_profile: bool = True,
 ) -> tuple[Path, list[WalkForwardSummary]]:
     reports = Path(reports_root)
     reports.mkdir(parents=True, exist_ok=True)
-    candidates = _load_candidates(reports, store, settings, max_per_symbol)
+    candidates = _load_candidates(reports, store, settings, max_per_symbol, patterns=patterns)
     events = store.read_events()
     rows: list[WalkForwardRow] = []
     summaries: list[WalkForwardSummary] = []
@@ -102,7 +104,8 @@ def run_walk_forward(
     summary_frame = pd.DataFrame([asdict(item) for item in summaries]).sort_values("walk_forward_score", ascending=False)
     row_frame.to_csv(reports / "walk_forward_windows.csv", index=False, encoding="utf-8-sig")
     summary_frame.to_csv(reports / "walk_forward_summary.csv", index=False, encoding="utf-8-sig")
-    _write_walk_forward_profile(store, summary_frame, reports)
+    if write_profile:
+        _write_walk_forward_profile(store, summary_frame, reports)
     report_path = reports / "walk_forward_report.md"
     report_path.write_text(_render_report(summary_frame, row_frame, settings), encoding="utf-8")
     return report_path, summaries
@@ -145,9 +148,18 @@ def _walk_forward_group_worker(task) -> tuple[list[WalkForwardRow], WalkForwardS
     return symbol_rows, summary
 
 
-def _load_candidates(reports: Path, store: LocalStore, settings: Settings, max_per_symbol: int) -> pd.DataFrame:
+def _load_candidates(
+    reports: Path,
+    store: LocalStore,
+    settings: Settings,
+    max_per_symbol: int,
+    patterns: tuple[str, ...] | None = None,
+) -> pd.DataFrame:
     del reports, store
     params_grid = _static_walk_forward_params(settings.timeframes)
+    if patterns is not None:
+        allowed_patterns = set(patterns)
+        params_grid = [params for params in params_grid if params.pattern in allowed_patterns]
     rows = [
         {
             "symbol": symbol,
@@ -219,24 +231,28 @@ def _static_walk_forward_params(timeframes: tuple[str, ...]) -> list[StrategyPar
                                 risk_mode="strict",
                             )
                         )
-        for momentum_lookback in (24, 48):
-            for vol_lookback in (24, 48):
-                for threshold in (0.4, 0.8):
-                    for atr_mult in (2.0, 3.0):
-                        params.append(
-                            StrategyParams(
-                                pattern="tsmom_vol",
-                                side="both",
-                                timeframe=timeframe,
-                                momentum_lookback=momentum_lookback,
-                                vol_lookback=vol_lookback,
-                                score_threshold=threshold,
-                                atr_period=14,
-                                atr_mult=atr_mult,
-                                max_hold_bars=64,
-                                risk_mode="strict",
-                            )
-                        )
+        for pattern in ("tsmom_vol", "quality_tsmom"):
+            for momentum_lookback in (24, 48):
+                for vol_lookback in (24, 48):
+                    for threshold in (0.4, 0.8):
+                        quality_thresholds = (0.2, 0.3) if pattern == "quality_tsmom" else (0.25,)
+                        for quality_threshold in quality_thresholds:
+                            for atr_mult in (2.0, 3.0):
+                                params.append(
+                                    StrategyParams(
+                                        pattern=pattern,  # type: ignore[arg-type]
+                                        side="both",
+                                        timeframe=timeframe,
+                                        momentum_lookback=momentum_lookback,
+                                        vol_lookback=vol_lookback,
+                                        score_threshold=threshold,
+                                        trend_quality_threshold=quality_threshold,
+                                        atr_period=14,
+                                        atr_mult=atr_mult,
+                                        max_hold_bars=64,
+                                        risk_mode="strict",
+                                    )
+                                )
         for lookback in (16, 32):
             for breakout_pct in (0.0015, 0.003):
                 for threshold in (0.75, 0.9):
@@ -277,6 +293,33 @@ def _static_walk_forward_params(timeframes: tuple[str, ...]) -> list[StrategyPar
                                     risk_mode="strict",
                                 )
                             )
+        if timeframe == "1d":
+            ensemble_sets = ((20, 80, 64), (40, 120, 96))
+        else:
+            ensemble_sets = ((24, 64, 64), (48, 96, 96))
+        for pattern in ("ensemble_trend", "trend_pullback"):
+            for momentum_lookback, range_lookback, max_hold in ensemble_sets:
+                for threshold in (0.4, 0.8):
+                    for quality_threshold in (0.2, 0.3):
+                        for atr_mult in (2.0, 3.0):
+                            params.append(
+                                StrategyParams(
+                                    pattern=pattern,  # type: ignore[arg-type]
+                                    side="both",
+                                    timeframe=timeframe,
+                                    range_lookback=range_lookback,
+                                    breakout_pct=0.0015,
+                                    momentum_lookback=momentum_lookback,
+                                    vol_lookback=24,
+                                    score_threshold=threshold,
+                                    trend_quality_threshold=quality_threshold,
+                                    atr_period=14,
+                                    atr_mult=atr_mult,
+                                    exit_lookback=12,
+                                    max_hold_bars=max_hold,
+                                    risk_mode="strict",
+                                )
+                            )
     return params
 
 
@@ -287,7 +330,11 @@ def _load_backtest_candidates(store: LocalStore, settings: Settings) -> pd.DataF
     frame = results.copy()
     frame["params"] = frame["params_json"].apply(json.loads)
     frame["pattern"] = frame["params"].apply(lambda item: item.get("pattern") if isinstance(item, dict) else None)
-    frame = frame[frame["pattern"].isin({"donchian_atr", "tsmom_vol", "vol_breakout", "carry_tsmom"})].copy()
+    frame = frame[
+        frame["pattern"].isin(
+            {"donchian_atr", "tsmom_vol", "quality_tsmom", "vol_breakout", "carry_tsmom", "ensemble_trend", "trend_pullback"}
+        )
+    ].copy()
     if frame.empty:
         return pd.DataFrame()
     frame["overfit_flag"] = frame.get("overfit_flag", False).astype(bool)

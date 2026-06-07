@@ -37,7 +37,15 @@ def refine_strategies(
     store: LocalStore,
     settings: Settings,
     reports_root: str | Path,
-    patterns: tuple[str, ...] = ("donchian_atr", "tsmom_vol", "vol_breakout", "carry_tsmom"),
+    patterns: tuple[str, ...] = (
+        "donchian_atr",
+        "tsmom_vol",
+        "quality_tsmom",
+        "vol_breakout",
+        "carry_tsmom",
+        "ensemble_trend",
+        "trend_pullback",
+    ),
     max_per_symbol: int = 40,
     rolling_windows: int = 4,
     top_seeds_per_symbol: int = 3,
@@ -191,33 +199,43 @@ def _perturb(params: StrategyParams) -> list[StrategyParams]:
                                             )
                                         )
         return _sort_by_distance(params, rows)
-    if params.pattern in {"tsmom_vol", "carry_tsmom"}:
+    if params.pattern in {"tsmom_vol", "quality_tsmom", "carry_tsmom", "ensemble_trend", "trend_pullback"}:
         momentums = _near_int(params.momentum_lookback, [16, 24, 32, 48, 64, 96])
+        ranges = _near_int(params.range_lookback, [24, 32, 48, 64, 96, 120])
         vols = _near_int(params.vol_lookback, [16, 24, 32, 48, 64, 96])
         thresholds = _near_float(params.score_threshold, [0.2, 0.3, 0.4, 0.6, 0.8, 1.0])
+        quality_thresholds = _near_float(params.trend_quality_threshold, [0.15, 0.2, 0.25, 0.3, 0.4])
         atr_periods = _near_int(params.atr_period, [10, 14, 20])
         atr_mults = _near_float(params.atr_mult, [1.8, 2.0, 2.5, 3.0, 3.5])
         holds = _near_int(params.max_hold_bars, [24, 32, 48, 64, 96])
         rows = []
         for momentum in momentums:
-            for vol in vols:
-                for threshold in thresholds:
-                    for atr_period in atr_periods:
-                        for atr_mult in atr_mults:
-                            for max_hold in holds:
-                                rows.append(
-                                    StrategyParams(
-                                        **{
-                                            **params.to_dict(),
-                                            "momentum_lookback": momentum,
-                                            "vol_lookback": vol,
-                                            "score_threshold": threshold,
-                                            "atr_period": atr_period,
-                                            "atr_mult": atr_mult,
-                                            "max_hold_bars": max_hold,
-                                        }
-                                    )
-                                )
+            range_values = ranges if params.pattern in {"ensemble_trend", "trend_pullback"} else [params.range_lookback]
+            quality_values = (
+                quality_thresholds if params.pattern in {"quality_tsmom", "ensemble_trend", "trend_pullback"} else [params.trend_quality_threshold]
+            )
+            for range_lookback in range_values:
+                for vol in vols:
+                    for threshold in thresholds:
+                        for quality_threshold in quality_values:
+                            for atr_period in atr_periods:
+                                for atr_mult in atr_mults:
+                                    for max_hold in holds:
+                                        rows.append(
+                                            StrategyParams(
+                                                **{
+                                                    **params.to_dict(),
+                                                    "range_lookback": range_lookback,
+                                                    "momentum_lookback": momentum,
+                                                    "vol_lookback": vol,
+                                                    "score_threshold": threshold,
+                                                    "trend_quality_threshold": quality_threshold,
+                                                    "atr_period": atr_period,
+                                                    "atr_mult": atr_mult,
+                                                    "max_hold_bars": max_hold,
+                                                }
+                                            )
+                                        )
         return _sort_by_distance(params, rows)
     return [params]
 

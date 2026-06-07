@@ -56,8 +56,11 @@ def main(argv: list[str] | None = None) -> int:
             "trend_failure",
             "donchian_atr",
             "tsmom_vol",
+            "quality_tsmom",
             "vol_breakout",
             "carry_tsmom",
+            "ensemble_trend",
+            "trend_pullback",
         ],
         help="Limit search to one or more strategy patterns",
     )
@@ -70,7 +73,15 @@ def main(argv: list[str] | None = None) -> int:
     refine_p.add_argument(
         "--pattern",
         action="append",
-        choices=["donchian_atr", "tsmom_vol", "vol_breakout", "carry_tsmom"],
+        choices=[
+            "donchian_atr",
+            "tsmom_vol",
+            "quality_tsmom",
+            "vol_breakout",
+            "carry_tsmom",
+            "ensemble_trend",
+            "trend_pullback",
+        ],
         help="Pattern to refine",
     )
     refine_p.add_argument("--max-per-symbol", type=int, default=40)
@@ -81,6 +92,28 @@ def main(argv: list[str] | None = None) -> int:
     wf_p.add_argument("--folds", type=int, default=5)
     wf_p.add_argument("--max-per-symbol", type=int, default=24)
     wf_p.add_argument("--workers", type=int, default=6)
+    wf_p.add_argument("--timeframe", action="append", help="Limit walk-forward to one or more timeframes")
+    wf_p.add_argument("--symbol", action="append", help="Limit walk-forward to one or more symbols")
+    wf_p.add_argument("--no-profile-write", action="store_true", help="Do not overwrite the stored live walk-forward profile")
+    wf_p.add_argument("--reports-root", default=None, help="Write walk-forward reports to this directory")
+    wf_p.add_argument(
+        "--pattern",
+        action="append",
+        choices=[
+            "swing_reversal",
+            "breakout",
+            "failed_breakout",
+            "trend_failure",
+            "donchian_atr",
+            "tsmom_vol",
+            "quality_tsmom",
+            "vol_breakout",
+            "carry_tsmom",
+            "ensemble_trend",
+            "trend_pullback",
+        ],
+        help="Limit walk-forward validation to one or more strategy patterns",
+    )
 
     term_p = sub.add_parser("fetch-term-structure", help="Fetch single-contract daily data and build local carry factors")
     term_p.add_argument("--symbol", action="append", help="Limit to one or more symbols")
@@ -245,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
         report_path, evaluations = refine_strategies(
             store,
             settings,
-            settings.reports_root,
+            args.reports_root or settings.reports_root,
             patterns=patterns,
             max_per_symbol=args.max_per_symbol,
             rolling_windows=args.rolling_windows,
@@ -275,13 +308,26 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "walk-forward":
+        if args.timeframe:
+            settings = settings.__class__(**{**settings.__dict__, "timeframes": tuple(args.timeframe)})
+        if args.symbol:
+            selected = tuple(args.symbol)
+            settings = settings.__class__(
+                **{
+                    **settings.__dict__,
+                    "symbols": selected,
+                    "instruments": {symbol: settings.instruments[symbol] for symbol in selected},
+                }
+            )
         report_path, summaries = run_walk_forward(
             store,
             settings,
-            settings.reports_root,
+            args.reports_root or settings.reports_root,
             folds=args.folds,
             max_per_symbol=args.max_per_symbol,
             workers=args.workers,
+            patterns=tuple(args.pattern) if args.pattern else None,
+            write_profile=not args.no_profile_write,
         )
         print(f"walk-forward report: {report_path}")
         print(f"walk-forward symbols: {len(summaries)}")

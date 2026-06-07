@@ -58,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
             "tsmom_vol",
             "quality_tsmom",
             "vol_breakout",
+            "confirmed_breakout",
             "carry_tsmom",
             "ensemble_trend",
             "trend_pullback",
@@ -78,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
             "tsmom_vol",
             "quality_tsmom",
             "vol_breakout",
+            "confirmed_breakout",
             "carry_tsmom",
             "ensemble_trend",
             "trend_pullback",
@@ -90,7 +92,12 @@ def main(argv: list[str] | None = None) -> int:
 
     wf_p = sub.add_parser("walk-forward", help="Run causal walk-forward validation from a static parameter grid")
     wf_p.add_argument("--folds", type=int, default=5)
-    wf_p.add_argument("--max-per-symbol", type=int, default=24)
+    wf_p.add_argument(
+        "--max-per-symbol",
+        type=int,
+        default=12,
+        help="Max candidates per symbol/timeframe/pattern after the research-prior ordering",
+    )
     wf_p.add_argument("--workers", type=int, default=6)
     wf_p.add_argument("--timeframe", action="append", help="Limit walk-forward to one or more timeframes")
     wf_p.add_argument("--symbol", action="append", help="Limit walk-forward to one or more symbols")
@@ -108,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
             "tsmom_vol",
             "quality_tsmom",
             "vol_breakout",
+            "confirmed_breakout",
             "carry_tsmom",
             "ensemble_trend",
             "trend_pullback",

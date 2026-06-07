@@ -42,6 +42,7 @@ def refine_strategies(
         "tsmom_vol",
         "quality_tsmom",
         "vol_breakout",
+        "confirmed_breakout",
         "carry_tsmom",
         "ensemble_trend",
         "trend_pullback",
@@ -163,7 +164,7 @@ def _candidate_params_by_symbol(
 
 
 def _perturb(params: StrategyParams) -> list[StrategyParams]:
-    if params.pattern in {"donchian_atr", "vol_breakout"}:
+    if params.pattern in {"donchian_atr", "vol_breakout", "confirmed_breakout"}:
         lookbacks = _near_int(params.range_lookback, [8, 16, 24, 32, 48, 64])
         breakouts = _near_float(params.breakout_pct, [0.0, 0.001, 0.0015, 0.0025, 0.003, 0.005])
         atr_periods = _near_int(params.atr_period, [10, 14, 20])
@@ -172,6 +173,7 @@ def _perturb(params: StrategyParams) -> list[StrategyParams]:
         holds = _near_int(params.max_hold_bars, [24, 32, 48, 64, 96])
         vols = _near_int(params.vol_lookback, [24, 32, 48, 64, 96])
         thresholds = _near_float(params.score_threshold, [0.65, 0.75, 0.8, 0.9, 0.95])
+        volume_thresholds = _near_float(params.volume_threshold, [1.0, 1.1, 1.2, 1.35, 1.5])
         rows = []
         for lookback in lookbacks:
             for breakout in breakouts:
@@ -179,25 +181,30 @@ def _perturb(params: StrategyParams) -> list[StrategyParams]:
                     for atr_mult in atr_mults:
                         for exit_lookback in exits:
                             for max_hold in holds:
-                                vol_values = vols if params.pattern == "vol_breakout" else [params.vol_lookback]
-                                threshold_values = thresholds if params.pattern == "vol_breakout" else [params.score_threshold]
+                                vol_values = vols if params.pattern in {"vol_breakout", "confirmed_breakout"} else [params.vol_lookback]
+                                threshold_values = (
+                                    thresholds if params.pattern in {"vol_breakout", "confirmed_breakout"} else [params.score_threshold]
+                                )
+                                volume_values = volume_thresholds if params.pattern == "confirmed_breakout" else [params.volume_threshold]
                                 for vol_lookback in vol_values:
                                     for threshold in threshold_values:
-                                        rows.append(
-                                            StrategyParams(
-                                                **{
-                                                    **params.to_dict(),
-                                                    "range_lookback": lookback,
-                                                    "breakout_pct": breakout,
-                                                    "atr_period": atr_period,
-                                                    "atr_mult": atr_mult,
-                                                    "exit_lookback": exit_lookback,
-                                                    "max_hold_bars": max_hold,
-                                                    "vol_lookback": vol_lookback,
-                                                    "score_threshold": threshold,
-                                                }
+                                        for volume_threshold in volume_values:
+                                            rows.append(
+                                                StrategyParams(
+                                                    **{
+                                                        **params.to_dict(),
+                                                        "range_lookback": lookback,
+                                                        "breakout_pct": breakout,
+                                                        "atr_period": atr_period,
+                                                        "atr_mult": atr_mult,
+                                                        "exit_lookback": exit_lookback,
+                                                        "max_hold_bars": max_hold,
+                                                        "vol_lookback": vol_lookback,
+                                                        "score_threshold": threshold,
+                                                        "volume_threshold": volume_threshold,
+                                                    }
+                                                )
                                             )
-                                        )
         return _sort_by_distance(params, rows)
     if params.pattern in {"tsmom_vol", "quality_tsmom", "carry_tsmom", "ensemble_trend", "trend_pullback"}:
         momentums = _near_int(params.momentum_lookback, [16, 24, 32, 48, 64, 96])

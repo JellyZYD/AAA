@@ -1,0 +1,5 @@
+﻿symbol,timeframe,pattern,strategy_id,total_net_pnl,worst_drawdown,return_drawdown,positive_windows,windows,weighted_win_rate,total_trades,fixed_validation_pass
+SR,1d,vol_breakout,vol_breakout|both|1d|w3|sw0.006|br0.003|lb16|sl0.015|mh64|cd4|atr14|am2|ex16|mom48|vol48|th0.75|strict,16039.398000000001,-1991.6759999999995,8.053216487018975,4,4,0.8181818181818182,11,True
+RB,1d,donchian_atr,donchian_atr|both|1d|w3|sw0.006|br0.001|lb24|sl0.015|mh24|cd4|atr20|am3.2|ex16|mom48|vol48|th0.4|strict,12478.887,-5215.1870000000035,2.39279761205111,3,4,0.5641025641025641,39,True
+C,60m,donchian_atr,donchian_atr|both|60m|w3|sw0.006|br0.003|lb16|sl0.015|mh32|cd4|atr14|am3|ex12|mom48|vol48|th0.4|strict,1540.0020000000002,-589.101999999999,2.6141517088721526,4,4,0.6923076923076923,13,True
+CS,15m,trend_failure,trend_failure|short|15m|w3|sw0.004|br0.003|lb24|sl0.015|mh64|cd4|atr14|am2.5|ex12|mom48|vol48|th0.4|strict,851.0809999999999,-512.6999999999998,1.6599980495416427,3,4,0.7142857142857143,7,True

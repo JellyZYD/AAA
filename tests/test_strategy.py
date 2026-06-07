@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
 import pandas as pd
 
+from qihuo_signal.backtest import Backtester
 from qihuo_signal.config import load_settings
 from qihuo_signal.models import StrategyParams
 from qihuo_signal.refine import _perturb
 from qihuo_signal.storage import LocalStore
 from qihuo_signal.strategy import StrategyEngine, detect_pivots
-from qihuo_signal.walkforward import _load_candidates, _train_score
+from qihuo_signal.walkforward import WalkForwardRow, _load_candidates, _summarize_symbol, _train_score
 
 
 def bars_from_closes(closes: list[float]) -> pd.DataFrame:
@@ -141,6 +143,28 @@ class StrategyTests(unittest.TestCase):
         actions = StrategyEngine().generate_actions(bars, params, symbol="RB")
         self.assertIn("OPEN_LONG", [action.action for action in actions])
 
+    def test_confirmed_breakout_uses_volume_and_momentum_confirmation(self) -> None:
+        bars = bars_from_closes([100, 101, 100, 101, 100, 100, 100, 100, 100, 101, 105, 107, 109])
+        bars.loc[:, "volume"] = [1000] * 10 + [1800, 1600, 1500]
+        params = StrategyParams(
+            pattern="confirmed_breakout",
+            side="long",
+            timeframe="15m",
+            range_lookback=5,
+            breakout_pct=0.0,
+            atr_period=3,
+            atr_mult=2.0,
+            exit_lookback=3,
+            momentum_lookback=3,
+            vol_lookback=3,
+            score_threshold=1.5,
+            volume_threshold=1.1,
+            max_hold_bars=20,
+            risk_mode="signal",
+        )
+        actions = StrategyEngine().generate_actions(bars, params, symbol="RB")
+        self.assertIn("OPEN_LONG", [action.action for action in actions])
+
     def test_carry_tsmom_uses_lagged_carry_to_open_long(self) -> None:
         bars = bars_from_closes([100, 100, 101, 101, 102, 104, 106, 108, 110, 112, 114, 116])
         bars["carry_signal"] = 0.05
@@ -264,6 +288,30 @@ class StrategyTests(unittest.TestCase):
         good = BacktestResult("RB", "1d", "good", params, 1000, 0.1, -500, 0.5, 2.0, 10, 100, -100, 1)
         bad = BacktestResult("RB", "1d", "bad", params, -1000, -0.1, -500, 0.5, 2.0, 10, -100, -500, 5)
         self.assertGreater(_train_score(good, Settings()), _train_score(bad, Settings()))
+
+    def test_walk_forward_summary_weights_win_rate_by_trades(self) -> None:
+        settings = load_settings("missing-test-config.yaml")
+        params = StrategyParams(pattern="donchian_atr", timeframe="15m", risk_mode="signal")
+        candidates = pd.DataFrame(
+            [{"params_json": json.dumps(params.to_dict(), ensure_ascii=False), "strategy_id": params.strategy_id}]
+        )
+        rows = [
+            WalkForwardRow("RB", 1, "15m", "donchian_atr", params.strategy_id, 0, 0, 0, 0, 0, 0, 0.0, 0, "a", "b"),
+            WalkForwardRow("RB", 2, "15m", "donchian_atr", params.strategy_id, 0, 0, 0, 0, 100, -50, 0.5, 20, "b", "c"),
+            WalkForwardRow("RB", 3, "15m", "donchian_atr", params.strategy_id, 0, 0, 0, 0, 100, -50, 0.8, 5, "c", "d"),
+        ]
+
+        summary = _summarize_symbol(
+            "RB",
+            candidates,
+            bars_from_closes([100 + (i % 3) for i in range(120)]),
+            rows,
+            settings,
+            Backtester(settings),
+            None,
+        )
+
+        self.assertAlmostEqual(summary.avg_test_win_rate, 14 / 25)
 
     def test_walk_forward_candidates_are_static_without_prior_results(self) -> None:
         settings = load_settings("missing-test-config.yaml")

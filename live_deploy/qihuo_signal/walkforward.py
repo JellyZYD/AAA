@@ -16,6 +16,7 @@ MIN_ACTIVE_POSITIVE_RATE = 0.75
 MIN_ACTIVE_RETURN_DRAWDOWN = 1.2
 MIN_ACTIVE_TEST_NET = 500.0
 MAX_ACTIVE_DRAWDOWN_FRACTION = 0.8
+MIN_ACTIVE_AVG_WIN_RATE = 0.5
 
 
 @dataclass(frozen=True)
@@ -198,6 +199,23 @@ def _static_walk_forward_params(timeframes: tuple[str, ...]) -> list[StrategyPar
                             risk_mode="strict",
                         )
                     )
+        if timeframe in {"15m", "60m"}:
+            for side in ("short", "both"):
+                for swing_pct in (0.004, 0.008):
+                    for breakout_pct in (0.0015, 0.003):
+                        for max_hold in (32, 64):
+                            params.append(
+                                StrategyParams(
+                                    pattern="trend_failure",
+                                    side=side,  # type: ignore[arg-type]
+                                    timeframe=timeframe,
+                                    swing_window=3,
+                                    min_swing_pct=swing_pct,
+                                    breakout_pct=breakout_pct,
+                                    max_hold_bars=max_hold,
+                                    risk_mode="strict",
+                                )
+                            )
         for pattern in ("breakout", "failed_breakout"):
             for lookback in (16, 32):
                 for breakout_pct in (0.0015, 0.003):
@@ -213,6 +231,36 @@ def _static_walk_forward_params(timeframes: tuple[str, ...]) -> list[StrategyPar
                                 risk_mode="strict",
                             )
                         )
+        if timeframe == "1d":
+            high_win_donchian = (
+                (16, 0.0010, 14, 3.5, 24),
+                (16, 0.0010, 14, 3.5, 16),
+                (16, 0.0010, 20, 3.2, 24),
+                (24, 0.0010, 20, 3.2, 24),
+                (24, 0.0010, 20, 3.2, 16),
+                (24, 0.0010, 14, 3.2, 24),
+                (24, 0.0010, 14, 3.2, 32),
+                (24, 0.0015, 14, 3.0, 24),
+                (32, 0.0010, 14, 3.2, 24),
+                (32, 0.0015, 14, 3.0, 24),
+                (16, 0.0015, 14, 3.0, 24),
+                (24, 0.0015, 20, 3.0, 24),
+            )
+            for lookback, breakout_pct, atr_period, atr_mult, exit_lookback in high_win_donchian:
+                params.append(
+                    StrategyParams(
+                        pattern="donchian_atr",
+                        side="both",
+                        timeframe=timeframe,
+                        range_lookback=lookback,
+                        breakout_pct=breakout_pct,
+                        atr_period=atr_period,
+                        atr_mult=atr_mult,
+                        exit_lookback=exit_lookback,
+                        max_hold_bars=24,
+                        risk_mode="strict",
+                    )
+                )
         for lookback in (16, 32):
             for breakout_pct in (0.0015, 0.003):
                 for atr_mult in (2.0, 3.0):
@@ -274,6 +322,29 @@ def _static_walk_forward_params(timeframes: tuple[str, ...]) -> list[StrategyPar
                                     risk_mode="strict",
                                 )
                             )
+        for lookback in (16, 32):
+            for breakout_pct in (0.0015, 0.003):
+                for threshold in (0.75, 0.9):
+                    for atr_mult in (2.0, 3.0):
+                        for volume_threshold in (1.1, 1.3):
+                            params.append(
+                                StrategyParams(
+                                    pattern="confirmed_breakout",
+                                    side="both",
+                                    timeframe=timeframe,
+                                    range_lookback=lookback,
+                                    breakout_pct=breakout_pct,
+                                    atr_period=14,
+                                    atr_mult=atr_mult,
+                                    exit_lookback=16,
+                                    max_hold_bars=32,
+                                    momentum_lookback=48,
+                                    vol_lookback=48,
+                                    score_threshold=threshold,
+                                    volume_threshold=volume_threshold,
+                                    risk_mode="strict",
+                                )
+                            )
         if timeframe == "1d":
             for momentum_lookback in (24, 48):
                 for vol_lookback in (24, 48):
@@ -332,7 +403,16 @@ def _load_backtest_candidates(store: LocalStore, settings: Settings) -> pd.DataF
     frame["pattern"] = frame["params"].apply(lambda item: item.get("pattern") if isinstance(item, dict) else None)
     frame = frame[
         frame["pattern"].isin(
-            {"donchian_atr", "tsmom_vol", "quality_tsmom", "vol_breakout", "carry_tsmom", "ensemble_trend", "trend_pullback"}
+            {
+                "donchian_atr",
+                "tsmom_vol",
+                "quality_tsmom",
+                "vol_breakout",
+                "confirmed_breakout",
+                "carry_tsmom",
+                "ensemble_trend",
+                "trend_pullback",
+            }
         )
     ].copy()
     if frame.empty:
@@ -396,13 +476,15 @@ def _fold_bounds(length: int, folds: int, window: int) -> tuple[int, int]:
 def _train_score(result: BacktestResult, settings: Settings) -> float:
     drawdown = abs(result.max_drawdown)
     score = (
-        result.net_pnl * 0.5
-        + result.win_rate * settings.capital * 1.5
-        + min(float(result.profit_factor), 5.0) * 800
-        - drawdown * 0.9
+        result.net_pnl * 0.45
+        + result.win_rate * settings.capital * 2.4
+        + min(float(result.profit_factor), 5.0) * 650
+        - drawdown * 1.15
     )
     if result.trade_count < settings.backtest.min_trades_for_champion:
         score -= settings.capital * 2
+    if result.win_rate <= MIN_ACTIVE_AVG_WIN_RATE:
+        score -= settings.capital * (MIN_ACTIVE_AVG_WIN_RATE - result.win_rate) * 4
     if result.net_pnl <= 0:
         score += result.net_pnl * 2
     if drawdown > settings.capital:
@@ -423,8 +505,12 @@ def _summarize_symbol(
     positive = sum(1 for row in rows if row.test_net_pnl > 0)
     min_net = min(row.test_net_pnl for row in rows)
     worst_dd = min(row.test_max_drawdown for row in rows)
-    avg_win = sum(row.test_win_rate for row in rows) / len(rows)
     trades = sum(row.test_trade_count for row in rows)
+    avg_win = (
+        sum(row.test_win_rate * row.test_trade_count for row in rows) / trades
+        if trades > 0
+        else 0.0
+    )
     positive_rate = positive / len(rows)
     selected = _select_full_history_candidate(symbol, candidates, bars, settings, backtester, events)
     params, selected_score = selected
@@ -436,6 +522,7 @@ def _summarize_symbol(
         and positive_rate >= MIN_ACTIVE_POSITIVE_RATE
         and reward_drawdown >= MIN_ACTIVE_RETURN_DRAWDOWN
         and drawdown_ok
+        and avg_win > MIN_ACTIVE_AVG_WIN_RATE
         and trades >= settings.backtest.min_trades_for_champion
     )
     score = (
@@ -450,7 +537,7 @@ def _summarize_symbol(
         if active
         else (
             "walk-forward rejected: requires positive_rate>=75%, "
-            "net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital"
+            "avg_win_rate>50%, net/max_drawdown>=1.2, net>=500, and drawdown<=80% capital"
         )
     )
     return WalkForwardSummary(

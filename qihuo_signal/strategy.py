@@ -90,6 +90,8 @@ class StrategyEngine:
             return self._generate_quality_tsmom_actions(df, params, symbol, events, risk_filter)
         if params.pattern == "vol_breakout":
             return self._generate_vol_breakout_actions(df, params, symbol, events, risk_filter)
+        if params.pattern == "confirmed_breakout":
+            return self._generate_confirmed_breakout_actions(df, params, symbol, events, risk_filter)
         if params.pattern == "carry_tsmom":
             return self._generate_carry_tsmom_actions(df, params, symbol, events, risk_filter)
         if params.pattern == "ensemble_trend":
@@ -666,6 +668,125 @@ class StrategyEngine:
                     entry_index = i
         return actions
 
+    def _generate_confirmed_breakout_actions(
+        self,
+        df: pd.DataFrame,
+        params: StrategyParams,
+        symbol: str,
+        events: pd.DataFrame | None,
+        risk_filter: RiskFilter | None,
+    ) -> list[StrategyAction]:
+        df = df.copy()
+        df["_atr"] = self._atr(df, params.atr_period)
+        atr_pct = df["_atr"] / df["close"].where(df["close"] > 0)
+        channel_width = (
+            df["high"].rolling(params.range_lookback, min_periods=params.range_lookback).max()
+            - df["low"].rolling(params.range_lookback, min_periods=params.range_lookback).min()
+        ) / df["close"].where(df["close"] > 0)
+        df["_atr_ratio"] = atr_pct.shift(1) / atr_pct.shift(1).rolling(params.vol_lookback, min_periods=params.vol_lookback).median()
+        df["_width_ratio"] = channel_width.shift(1) / channel_width.shift(1).rolling(
+            params.vol_lookback, min_periods=params.vol_lookback
+        ).median()
+        one_bar_returns = df["close"].pct_change()
+        lookback_return = df["close"].pct_change(params.momentum_lookback)
+        momentum_vol = one_bar_returns.rolling(params.vol_lookback, min_periods=params.vol_lookback).std()
+        momentum_vol = momentum_vol * math.sqrt(max(1, params.momentum_lookback))
+        df["_ts_score"] = lookback_return / momentum_vol.where(momentum_vol > 0)
+        prior_volume = pd.to_numeric(df["volume"], errors="coerce").shift(1)
+        volume_median = prior_volume.rolling(params.vol_lookback, min_periods=params.vol_lookback).median()
+        current_volume = pd.to_numeric(df["volume"], errors="coerce")
+        df["_volume_ratio"] = current_volume / volume_median.where(volume_median > 0)
+
+        actions: list[StrategyAction] = []
+        position = 0
+        stop_price: float | None = None
+        entry_index = -1
+        cooldown = 0
+        min_index = max(
+            params.range_lookback,
+            params.exit_lookback,
+            params.atr_period,
+            params.vol_lookback,
+            params.momentum_lookback,
+        )
+
+        for i, row in df.iterrows():
+            if i < min_index:
+                continue
+            if cooldown > 0:
+                cooldown -= 1
+            ts = pd.Timestamp(row["timestamp"])
+            close = float(row["close"])
+            high = float(row["high"])
+            low = float(row["low"])
+            atr = float(row["_atr"]) if pd.notna(row["_atr"]) else 0.0
+            atr_ratio = float(row["_atr_ratio"]) if pd.notna(row["_atr_ratio"]) else math.inf
+            width_ratio = float(row["_width_ratio"]) if pd.notna(row["_width_ratio"]) else math.inf
+            score = float(row["_ts_score"]) if pd.notna(row["_ts_score"]) else 0.0
+            volume_ratio = float(row["_volume_ratio"]) if pd.notna(row["_volume_ratio"]) else 0.0
+            if atr <= 0:
+                continue
+            prior = df.iloc[i - params.range_lookback : i]
+            exit_prior = df.iloc[i - params.exit_lookback : i]
+            channel_high = float(prior["high"].max())
+            channel_low = float(prior["low"].min())
+            exit_high = float(exit_prior["high"].max())
+            exit_low = float(exit_prior["low"].min())
+            compressed = atr_ratio <= params.score_threshold and width_ratio <= max(params.score_threshold, 0.75)
+            volume_ok = volume_ratio >= params.volume_threshold
+            bias = event_bias(events, symbol, ts) if events is not None else 0.0
+
+            if position == 1:
+                stop_price = max(stop_price or -math.inf, close - params.atr_mult * atr)
+                if low <= stop_price:
+                    actions.append(self._action(i, ts, "CLOSE_LONG", stop_price, "confirmed breakout long ATR stop", stop_price, 0.55, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                elif close < exit_low or score <= 0 or i - entry_index >= params.max_hold_bars:
+                    actions.append(self._action(i, ts, "CLOSE_LONG", close, "confirmed breakout long exit", stop_price, 0.56, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                continue
+            if position == -1:
+                stop_price = min(stop_price or math.inf, close + params.atr_mult * atr)
+                if high >= stop_price:
+                    actions.append(self._action(i, ts, "CLOSE_SHORT", stop_price, "confirmed breakout short ATR stop", stop_price, 0.55, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                elif close > exit_high or score >= 0 or i - entry_index >= params.max_hold_bars:
+                    actions.append(self._action(i, ts, "CLOSE_SHORT", close, "confirmed breakout short exit", stop_price, 0.56, bias))
+                    position = 0
+                    cooldown = params.cooldown_bars
+                continue
+            if cooldown > 0 or not compressed or not volume_ok:
+                continue
+
+            if params.side in {"long", "both"} and score > 0 and close > channel_high * (1 + params.breakout_pct):
+                stop = close - params.atr_mult * atr
+                reason = (
+                    f"confirmed breakout long: momentum {score:.2f}, "
+                    f"volume ratio {volume_ratio:.2f}, ATR ratio {atr_ratio:.2f}, width ratio {width_ratio:.2f}"
+                )
+                action = self._action(i, ts, "OPEN_LONG", close, reason, stop, 0.64, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = 1
+                    stop_price = stop
+                    entry_index = i
+            elif params.side in {"short", "both"} and score < 0 and close < channel_low * (1 - params.breakout_pct):
+                stop = close + params.atr_mult * atr
+                reason = (
+                    f"confirmed breakout short: momentum {score:.2f}, "
+                    f"volume ratio {volume_ratio:.2f}, ATR ratio {atr_ratio:.2f}, width ratio {width_ratio:.2f}"
+                )
+                action = self._action(i, ts, "OPEN_SHORT", close, reason, stop, 0.64, bias)
+                if self._passes_risk(action, row, risk_filter, actions):
+                    actions.append(action)
+                    position = -1
+                    stop_price = stop
+                    entry_index = i
+        return actions
+
     def _generate_carry_tsmom_actions(
         self,
         df: pd.DataFrame,
@@ -1142,6 +1263,7 @@ def build_param_grid(
             "carry_tsmom",
             "ensemble_trend",
             "trend_pullback",
+            "confirmed_breakout",
         )
     )
     windows = [2, 3] if fast else [2, 3, 4]
@@ -1196,31 +1318,35 @@ def build_param_grid(
                                                 risk_mode=risk_mode,  # type: ignore[arg-type]
                                             )
                                         )
-                        elif pattern in {"donchian_atr", "vol_breakout"}:
+                        elif pattern in {"donchian_atr", "vol_breakout", "confirmed_breakout"}:
                             for lookback in range_lookbacks:
                                 for breakout_pct in breakout_pcts:
                                     for atr_period in atr_periods:
                                         for atr_mult in atr_mults:
                                             for exit_lookback in exit_lookbacks:
                                                 for max_hold in max_holds:
-                                                    thresholds = compression_thresholds if pattern == "vol_breakout" else [0.4]
+                                                    thresholds = compression_thresholds if pattern in {"vol_breakout", "confirmed_breakout"} else [0.4]
                                                     for threshold in thresholds:
-                                                        params.append(
-                                                            StrategyParams(
-                                                                pattern=pattern,  # type: ignore[arg-type]
-                                                                side=side,  # type: ignore[arg-type]
-                                                                timeframe=timeframe,
-                                                                range_lookback=lookback,
-                                                                breakout_pct=breakout_pct,
-                                                                atr_period=atr_period,
-                                                                atr_mult=atr_mult,
-                                                                exit_lookback=exit_lookback,
-                                                                max_hold_bars=max_hold,
-                                                                vol_lookback=48,
-                                                                score_threshold=threshold,
-                                                                risk_mode=risk_mode,  # type: ignore[arg-type]
+                                                        volume_thresholds = [1.15, 1.35] if pattern == "confirmed_breakout" else [1.2]
+                                                        for volume_threshold in volume_thresholds:
+                                                            params.append(
+                                                                StrategyParams(
+                                                                    pattern=pattern,  # type: ignore[arg-type]
+                                                                    side=side,  # type: ignore[arg-type]
+                                                                    timeframe=timeframe,
+                                                                    range_lookback=lookback,
+                                                                    breakout_pct=breakout_pct,
+                                                                    atr_period=atr_period,
+                                                                    atr_mult=atr_mult,
+                                                                    exit_lookback=exit_lookback,
+                                                                    max_hold_bars=max_hold,
+                                                                    momentum_lookback=48,
+                                                                    vol_lookback=48,
+                                                                    score_threshold=threshold,
+                                                                    volume_threshold=volume_threshold,
+                                                                    risk_mode=risk_mode,  # type: ignore[arg-type]
+                                                                )
                                                             )
-                                                        )
                         elif pattern in {"tsmom_vol", "quality_tsmom", "carry_tsmom", "ensemble_trend", "trend_pullback"}:
                             if pattern == "carry_tsmom" and timeframe != "1d":
                                 continue

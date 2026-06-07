@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -56,27 +57,65 @@ def run_walk_forward(
     settings: Settings,
     reports_root: str | Path,
     folds: int = 5,
-    max_per_symbol: int = 12,
+    max_per_symbol: int = 24,
+    workers: int = 6,
 ) -> tuple[Path, list[WalkForwardSummary]]:
     reports = Path(reports_root)
     reports.mkdir(parents=True, exist_ok=True)
     candidates = _load_candidates(reports, store, settings, max_per_symbol)
-    backtester = Backtester(settings)
     events = store.read_events()
     rows: list[WalkForwardRow] = []
     summaries: list[WalkForwardSummary] = []
+    tasks = []
 
     for (symbol, timeframe), group in candidates.groupby(["symbol", "timeframe"], sort=False):
-        spec = settings.instruments.get(str(symbol))
-        if spec is None:
+        bars = store.read_bars(str(symbol), str(timeframe))
+        if len(bars) < folds * 40:
             continue
-        symbol_rows: list[WalkForwardRow] = []
-        for window in range(1, folds):
-            selected = _select_for_window(backtester, store, settings, str(symbol), spec, group, events, folds, window)
-            if selected is None:
-                continue
-            params, train_result, train_score, test_result, test_start, test_end = selected
-            row = WalkForwardRow(
+        tasks.append((settings, str(symbol), str(timeframe), group.copy(), bars, events, folds))
+
+    if tasks:
+        worker_count = min(max(1, int(workers)), len(tasks))
+        if worker_count == 1:
+            for task in tasks:
+                group_rows, summary = _walk_forward_group_worker(task)
+                rows.extend(group_rows)
+                if summary is not None:
+                    summaries.append(summary)
+        else:
+            with ProcessPoolExecutor(max_workers=worker_count) as pool:
+                futures = [pool.submit(_walk_forward_group_worker, task) for task in tasks]
+                for completed, future in enumerate(as_completed(futures), start=1):
+                    group_rows, summary = future.result()
+                    rows.extend(group_rows)
+                    if summary is not None:
+                        summaries.append(summary)
+                    print(f"walk-forward completed groups {completed}/{len(tasks)}", flush=True)
+
+    row_frame = pd.DataFrame([asdict(row) for row in rows])
+    summary_frame = pd.DataFrame([asdict(item) for item in summaries]).sort_values("walk_forward_score", ascending=False)
+    row_frame.to_csv(reports / "walk_forward_windows.csv", index=False, encoding="utf-8-sig")
+    summary_frame.to_csv(reports / "walk_forward_summary.csv", index=False, encoding="utf-8-sig")
+    _write_walk_forward_profile(store, summary_frame, reports)
+    report_path = reports / "walk_forward_report.md"
+    report_path.write_text(_render_report(summary_frame, row_frame, settings), encoding="utf-8")
+    return report_path, summaries
+
+
+def _walk_forward_group_worker(task) -> tuple[list[WalkForwardRow], WalkForwardSummary | None]:
+    settings, symbol, _timeframe, candidates, bars, events, folds = task
+    spec = settings.instruments.get(str(symbol))
+    if spec is None:
+        return [], None
+    backtester = Backtester(settings)
+    symbol_rows: list[WalkForwardRow] = []
+    for window in range(1, folds):
+        selected = _select_for_window(backtester, settings, str(symbol), spec, bars, candidates, events, folds, window)
+        if selected is None:
+            continue
+        params, train_result, train_score, test_result, test_start, test_end = selected
+        symbol_rows.append(
+            WalkForwardRow(
                 symbol=str(symbol),
                 window=window,
                 timeframe=params.timeframe,
@@ -93,67 +132,146 @@ def run_walk_forward(
                 test_start=test_start,
                 test_end=test_end,
             )
-            rows.append(row)
-            symbol_rows.append(row)
-        if symbol_rows:
-            summary = _summarize_symbol(str(symbol), group, symbol_rows, store, settings, backtester, events)
-            summaries.append(summary)
-
-    row_frame = pd.DataFrame([asdict(row) for row in rows])
-    summary_frame = pd.DataFrame([asdict(item) for item in summaries]).sort_values("walk_forward_score", ascending=False)
-    row_frame.to_csv(reports / "walk_forward_windows.csv", index=False, encoding="utf-8-sig")
-    summary_frame.to_csv(reports / "walk_forward_summary.csv", index=False, encoding="utf-8-sig")
-    _write_walk_forward_profile(store, summary_frame, reports)
-    report_path = reports / "walk_forward_report.md"
-    report_path.write_text(_render_report(summary_frame, row_frame, settings), encoding="utf-8")
-    return report_path, summaries
+        )
+    if not symbol_rows:
+        return [], None
+    summary = _summarize_symbol(str(symbol), candidates, bars, symbol_rows, settings, backtester, events)
+    return symbol_rows, summary
 
 
 def _load_candidates(reports: Path, store: LocalStore, settings: Settings, max_per_symbol: int) -> pd.DataFrame:
-    refined_path = reports / "refined_candidates.csv"
-    rows: list[dict] = []
-    frames: list[pd.DataFrame] = []
-    if refined_path.exists():
-        frame = pd.read_csv(refined_path)
-        if not frame.empty:
-            frames.append(frame)
-    backtest_candidates = _load_backtest_candidates(store, settings)
-    if not backtest_candidates.empty:
-        frames.append(backtest_candidates)
-    profiles = store.read_profiles()
-    for profile in ("walk_forward", "refined_robust", "safe_winrate", "capital_safe", "balanced"):
-        for symbol, item in profiles.get(profile, {}).items():
-            best = item.get("best") or {}
-            params = best.get("params") or json.loads(str(best.get("params_json") or "{}"))
-            if not params:
-                continue
-            rows.append(
-                {
-                    "symbol": symbol,
-                    "timeframe": params.get("timeframe", best.get("timeframe")),
-                    "strategy_id": best.get("strategy_id") or StrategyParams.from_dict(params).strategy_id,
-                    "params_json": json.dumps(params, ensure_ascii=False, sort_keys=True),
-                    "robust_score": float(best.get("robust_score") or best.get("net_pnl") or 0.0),
-                }
-            )
-    if rows:
-        frames.append(pd.DataFrame(rows))
-    if not frames:
-        raise RuntimeError("No refined or backtest candidates found. Run qihuo backtest --search first.")
-    frame = pd.concat(frames, ignore_index=True)
-    if frame.empty:
-        raise RuntimeError("No refined or backtest candidates found. Run qihuo backtest --search first.")
+    del reports, store
+    params_grid = _static_walk_forward_params(settings.timeframes)
+    rows = [
+        {
+            "symbol": symbol,
+            "timeframe": params.timeframe,
+            "pattern": params.pattern,
+            "strategy_id": params.strategy_id,
+            "params_json": json.dumps(params.to_dict(), ensure_ascii=False, sort_keys=True),
+            "robust_score": 0.0,
+        }
+        for symbol in settings.symbols
+        for params in params_grid
+    ]
+    if not rows:
+        raise RuntimeError("No causal walk-forward candidates generated.")
+    frame = pd.DataFrame(rows)
     frame = frame.drop_duplicates(subset=["symbol", "strategy_id"])
-    if "pattern" not in frame.columns:
-        frame["pattern"] = None
-    missing_pattern = frame["pattern"].isna()
-    if missing_pattern.any():
-        frame.loc[missing_pattern, "pattern"] = frame.loc[missing_pattern, "params_json"].apply(
-            lambda value: json.loads(str(value)).get("pattern")
-        )
-    frame["robust_score"] = pd.to_numeric(frame["robust_score"], errors="coerce").fillna(0.0)
-    frame["rank"] = frame.groupby(["symbol", "timeframe", "pattern"])["robust_score"].rank(method="first", ascending=False)
+    frame["rank"] = frame.groupby(["symbol", "timeframe", "pattern"]).cumcount() + 1
     return frame[frame["rank"] <= max_per_symbol].copy()
+
+
+def _static_walk_forward_params(timeframes: tuple[str, ...]) -> list[StrategyParams]:
+    params: list[StrategyParams] = []
+    for timeframe in timeframes:
+        for pattern in ("swing_reversal", "trend_failure"):
+            for breakout_pct in (0.0015, 0.003):
+                for max_hold in (32, 64):
+                    params.append(
+                        StrategyParams(
+                            pattern=pattern,  # type: ignore[arg-type]
+                            side="both",
+                            timeframe=timeframe,
+                            swing_window=3,
+                            min_swing_pct=0.006,
+                            breakout_pct=breakout_pct,
+                            max_hold_bars=max_hold,
+                            risk_mode="strict",
+                        )
+                    )
+        for pattern in ("breakout", "failed_breakout"):
+            for lookback in (16, 32):
+                for breakout_pct in (0.0015, 0.003):
+                    for max_hold in (32, 64):
+                        params.append(
+                            StrategyParams(
+                                pattern=pattern,  # type: ignore[arg-type]
+                                side="both",
+                                timeframe=timeframe,
+                                range_lookback=lookback,
+                                breakout_pct=breakout_pct,
+                                max_hold_bars=max_hold,
+                                risk_mode="strict",
+                            )
+                        )
+        for lookback in (16, 32):
+            for breakout_pct in (0.0015, 0.003):
+                for atr_mult in (2.0, 3.0):
+                    for max_hold in (32, 64):
+                        params.append(
+                            StrategyParams(
+                                pattern="donchian_atr",
+                                side="both",
+                                timeframe=timeframe,
+                                range_lookback=lookback,
+                                breakout_pct=breakout_pct,
+                                atr_period=14,
+                                atr_mult=atr_mult,
+                                exit_lookback=12,
+                                max_hold_bars=max_hold,
+                                risk_mode="strict",
+                            )
+                        )
+        for momentum_lookback in (24, 48):
+            for vol_lookback in (24, 48):
+                for threshold in (0.4, 0.8):
+                    for atr_mult in (2.0, 3.0):
+                        params.append(
+                            StrategyParams(
+                                pattern="tsmom_vol",
+                                side="both",
+                                timeframe=timeframe,
+                                momentum_lookback=momentum_lookback,
+                                vol_lookback=vol_lookback,
+                                score_threshold=threshold,
+                                atr_period=14,
+                                atr_mult=atr_mult,
+                                max_hold_bars=64,
+                                risk_mode="strict",
+                            )
+                        )
+        for lookback in (16, 32):
+            for breakout_pct in (0.0015, 0.003):
+                for threshold in (0.75, 0.9):
+                    for atr_mult in (2.0, 3.0):
+                        for max_hold in (32, 64):
+                            params.append(
+                                StrategyParams(
+                                    pattern="vol_breakout",
+                                    side="both",
+                                    timeframe=timeframe,
+                                    range_lookback=lookback,
+                                    breakout_pct=breakout_pct,
+                                    atr_period=14,
+                                    atr_mult=atr_mult,
+                                    exit_lookback=16,
+                                    max_hold_bars=max_hold,
+                                    vol_lookback=48,
+                                    score_threshold=threshold,
+                                    risk_mode="strict",
+                                )
+                            )
+        if timeframe == "1d":
+            for momentum_lookback in (24, 48):
+                for vol_lookback in (24, 48):
+                    for threshold in (0.4, 0.8):
+                        for atr_mult in (2.0, 3.0):
+                            params.append(
+                                StrategyParams(
+                                    pattern="carry_tsmom",
+                                    side="both",
+                                    timeframe=timeframe,
+                                    momentum_lookback=momentum_lookback,
+                                    vol_lookback=vol_lookback,
+                                    score_threshold=threshold,
+                                    atr_period=14,
+                                    atr_mult=atr_mult,
+                                    max_hold_bars=64,
+                                    risk_mode="strict",
+                                )
+                            )
+    return params
 
 
 def _load_backtest_candidates(store: LocalStore, settings: Settings) -> pd.DataFrame:
@@ -186,26 +304,25 @@ def _load_backtest_candidates(store: LocalStore, settings: Settings) -> pd.DataF
 
 def _select_for_window(
     backtester: Backtester,
-    store: LocalStore,
     settings: Settings,
     symbol: str,
     spec,
+    bars: pd.DataFrame,
     candidates: pd.DataFrame,
     events: pd.DataFrame | None,
     folds: int,
     window: int,
 ):
     best = None
+    if len(bars) < folds * 40:
+        return None
+    test_start_i, test_end_i = _fold_bounds(len(bars), folds, window)
+    train = bars.iloc[:test_start_i].copy()
+    test = bars.iloc[test_start_i:test_end_i].copy()
+    if len(train) < 80 or len(test) < 30:
+        return None
     for _, row in candidates.iterrows():
         params = StrategyParams.from_dict(json.loads(str(row["params_json"])))
-        bars = store.read_bars(symbol, params.timeframe)
-        if len(bars) < folds * 40:
-            continue
-        test_start_i, test_end_i = _fold_bounds(len(bars), folds, window)
-        train = bars.iloc[:test_start_i].copy()
-        test = bars.iloc[test_start_i:test_end_i].copy()
-        if len(train) < 80 or len(test) < 30:
-            continue
         train_result = backtester.run(symbol, spec, train, params, events).result
         score = _train_score(train_result, settings)
         if best is None or score > best[2]:
@@ -243,8 +360,8 @@ def _train_score(result: BacktestResult, settings: Settings) -> float:
 def _summarize_symbol(
     symbol: str,
     candidates: pd.DataFrame,
+    bars: pd.DataFrame,
     rows: list[WalkForwardRow],
-    store: LocalStore,
     settings: Settings,
     backtester: Backtester,
     events: pd.DataFrame | None,
@@ -256,7 +373,7 @@ def _summarize_symbol(
     avg_win = sum(row.test_win_rate for row in rows) / len(rows)
     trades = sum(row.test_trade_count for row in rows)
     positive_rate = positive / len(rows)
-    selected = _select_full_history_candidate(symbol, candidates, store, settings, backtester, events)
+    selected = _select_full_history_candidate(symbol, candidates, bars, settings, backtester, events)
     params, selected_score = selected
     drawdown_ok = abs(worst_dd) <= settings.capital
     active = total > 0 and positive_rate >= 0.5 and drawdown_ok and trades >= settings.backtest.min_trades_for_champion
@@ -292,7 +409,7 @@ def _summarize_symbol(
 def _select_full_history_candidate(
     symbol: str,
     candidates: pd.DataFrame,
-    store: LocalStore,
+    bars: pd.DataFrame,
     settings: Settings,
     backtester: Backtester,
     events: pd.DataFrame | None,
@@ -301,7 +418,6 @@ def _select_full_history_candidate(
     spec = settings.instruments[symbol]
     for _, row in candidates.iterrows():
         params = StrategyParams.from_dict(json.loads(str(row["params_json"])))
-        bars = store.read_bars(symbol, params.timeframe)
         if bars.empty:
             continue
         result = backtester.run(symbol, spec, bars, params, events).result

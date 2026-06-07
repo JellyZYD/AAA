@@ -36,9 +36,13 @@ class Backtester:
         bars = bars.sort_values("timestamp").reset_index(drop=True)
         risk_filter = self._risk_filter(spec, params)
         actions = self.engine.generate_actions(bars, params, symbol=symbol, events=events, risk_filter=risk_filter)
-        actions_by_index: dict[int, list[StrategyAction]] = {}
+        actions_by_fill_index: dict[int, list[StrategyAction]] = {}
         for action in actions:
-            actions_by_index.setdefault(action.index, []).append(action)
+            if action.action == "RISK_BLOCKED":
+                continue
+            fill_index = action.index + 1
+            if fill_index < len(bars):
+                actions_by_fill_index.setdefault(fill_index, []).append(action)
 
         cash = self.settings.capital
         position = 0
@@ -52,27 +56,32 @@ class Backtester:
 
         for i, row in bars.iterrows():
             close = float(row["close"])
+            fill_price = self._fill_price(row)
             ts = pd.Timestamp(row["timestamp"]).to_pydatetime()
-            for action in actions_by_index.get(i, []):
+            for action in actions_by_fill_index.get(i, []):
                 if action.action == "OPEN_LONG" and position == 0:
+                    if not self._execution_risk_ok(spec, params, action, fill_price):
+                        continue
                     position = 1
                     qty = 1
-                    entry_price = action.price
-                    entry_time = action.timestamp
+                    entry_price = fill_price
+                    entry_time = ts
                     entry_reason = action.reason
-                    entry_margin = spec.margin(action.price, qty)
-                    cash -= self._fees(spec, action.price, qty)
+                    entry_margin = spec.margin(fill_price, qty)
+                    cash -= self._fees(spec, fill_price, qty)
                 elif action.action == "OPEN_SHORT" and position == 0:
+                    if not self._execution_risk_ok(spec, params, action, fill_price):
+                        continue
                     position = -1
                     qty = 1
-                    entry_price = action.price
-                    entry_time = action.timestamp
+                    entry_price = fill_price
+                    entry_time = ts
                     entry_reason = action.reason
-                    entry_margin = spec.margin(action.price, qty)
-                    cash -= self._fees(spec, action.price, qty)
+                    entry_margin = spec.margin(fill_price, qty)
+                    cash -= self._fees(spec, fill_price, qty)
                 elif action.action == "CLOSE_LONG" and position == 1:
                     trade, cash = self._close_trade(
-                        symbol, spec, "LONG", entry_time, action.timestamp, entry_price, action.price, qty, cash,
+                        symbol, spec, "LONG", entry_time, ts, entry_price, fill_price, qty, cash,
                         entry_reason, action.reason, entry_margin
                     )
                     trades.append(trade)
@@ -80,7 +89,7 @@ class Backtester:
                     qty = 0
                 elif action.action == "CLOSE_SHORT" and position == -1:
                     trade, cash = self._close_trade(
-                        symbol, spec, "SHORT", entry_time, action.timestamp, entry_price, action.price, qty, cash,
+                        symbol, spec, "SHORT", entry_time, ts, entry_price, fill_price, qty, cash,
                         entry_reason, action.reason, entry_margin
                     )
                     trades.append(trade)
@@ -156,6 +165,31 @@ class Backtester:
         if action.stop_price is None:
             return 0.0
         return abs(action.price - action.stop_price) * spec.multiplier * qty
+
+    def _execution_risk_ok(
+        self,
+        spec: InstrumentSpec,
+        params: StrategyParams,
+        action: StrategyAction,
+        execution_price: float,
+        qty: int = 1,
+    ) -> bool:
+        margin = spec.margin(execution_price, qty)
+        stop_risk = 0.0
+        if action.stop_price is not None:
+            stop_risk = abs(execution_price - action.stop_price) * spec.multiplier * qty
+        if params.risk_mode == "signal":
+            return True
+        if params.risk_mode == "aggressive":
+            risk_limit = max(self.settings.max_risk_per_trade * 1.5, self.settings.capital * 0.35)
+            return margin <= self.settings.capital and stop_risk <= risk_limit
+        return margin <= self.settings.max_margin_budget and stop_risk <= self.settings.max_risk_per_trade
+
+    def _fill_price(self, row: pd.Series) -> float:
+        open_price = float(row.get("open", 0.0) or 0.0)
+        if open_price > 0:
+            return open_price
+        return float(row["close"])
 
     def _fees(self, spec: InstrumentSpec, price: float, qty: int) -> float:
         notional_fee = abs(price) * spec.multiplier * qty * spec.fee_rate

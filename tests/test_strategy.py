@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 import pandas as pd
 
+from qihuo_signal.config import load_settings
 from qihuo_signal.models import StrategyParams
 from qihuo_signal.refine import _perturb
+from qihuo_signal.storage import LocalStore
 from qihuo_signal.strategy import StrategyEngine, detect_pivots
-from qihuo_signal.walkforward import _train_score
+from qihuo_signal.walkforward import _load_candidates, _train_score
 
 
 def bars_from_closes(closes: list[float]) -> pd.DataFrame:
@@ -151,6 +154,23 @@ class StrategyTests(unittest.TestCase):
         good = BacktestResult("RB", "1d", "good", params, 1000, 0.1, -500, 0.5, 2.0, 10, 100, -100, 1)
         bad = BacktestResult("RB", "1d", "bad", params, -1000, -0.1, -500, 0.5, 2.0, 10, -100, -500, 5)
         self.assertGreater(_train_score(good, Settings()), _train_score(bad, Settings()))
+
+    def test_walk_forward_candidates_are_static_without_prior_results(self) -> None:
+        settings = load_settings("missing-test-config.yaml")
+        settings = settings.__class__(
+            **{
+                **settings.__dict__,
+                "symbols": ("RB",),
+                "instruments": {"RB": settings.instruments["RB"]},
+                "timeframes": ("15m",),
+            }
+        )
+
+        candidates = _load_candidates(Path("missing-reports"), LocalStore("missing-data"), settings, max_per_symbol=2)
+
+        self.assertFalse(candidates.empty)
+        self.assertEqual(set(candidates["symbol"]), {"RB"})
+        self.assertTrue((candidates["robust_score"] == 0.0).all())
 
 
 if __name__ == "__main__":

@@ -5,8 +5,9 @@ import unittest
 
 import pandas as pd
 
+from qihuo_signal.alerts import format_signal
 from qihuo_signal.config import load_settings
-from qihuo_signal.models import StrategyParams
+from qihuo_signal.models import Signal, StrategyParams
 from qihuo_signal.polling import SignalPoller, closed_bars_only
 from qihuo_signal.storage import LocalStore
 
@@ -85,6 +86,53 @@ class PollingTests(unittest.TestCase):
             poller.poll_once()
 
         self.assertEqual(provider.updated_timeframes, ("60m",))
+
+    def test_existing_signal_keys_prevent_duplicate_live_alerts(self) -> None:
+        settings = load_settings("missing-test-config.yaml")
+        signal = Signal(
+            symbol="RB",
+            contract="RB0",
+            timestamp=pd.Timestamp("2026-01-01 10:00").to_pydatetime(),
+            action="OPEN_LONG",
+            price=3300,
+            confidence=0.6,
+            trigger_price=3300,
+            invalid_price=3250,
+            reason="test",
+            news_evidence="无",
+            risk_check="ok",
+            strategy_rank=1,
+            strategy_id="test-strategy",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            store = LocalStore(tmp)
+            store.append_signals([signal])
+            poller = SignalPoller(settings, store)
+
+            self.assertIn(poller._signal_key(signal), poller._existing_signal_keys())
+
+    def test_signal_alert_text_is_readable_chinese(self) -> None:
+        signal = Signal(
+            symbol="RB",
+            contract="RB0",
+            timestamp=pd.Timestamp("2026-01-01 10:00").to_pydatetime(),
+            action="OPEN_LONG",
+            price=3300,
+            confidence=0.6,
+            trigger_price=3300,
+            invalid_price=3250,
+            reason="突破",
+            news_evidence="无明显事件",
+            risk_check="信号基于已收完K线",
+            strategy_rank=1,
+            strategy_id="test-strategy",
+        )
+
+        text = format_signal(signal)
+
+        self.assertIn("期货信号", text)
+        self.assertIn("品种/合约", text)
+        self.assertNotIn("鏈熻揣", text)
 
 
 if __name__ == "__main__":

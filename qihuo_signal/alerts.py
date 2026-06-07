@@ -4,11 +4,9 @@ import time
 from dataclasses import dataclass
 
 import httpx
-
 import pandas as pd
 
-from .models import AlertSettings, Signal
-from .models import NewsEvent
+from .models import AlertSettings, NewsEvent, Signal
 
 
 class AlertSender:
@@ -97,8 +95,8 @@ def format_signal(signal: Signal) -> str:
     return (
         f"期货信号 {signal.action}\n"
         f"品种/合约: {signal.symbol} {signal.contract}\n"
-        f"时间: {signal.timestamp:%Y-%m-%d %H:%M}\n"
-        f"价格: {signal.price:.2f}\n"
+        f"信号K线时间: {signal.timestamp:%Y-%m-%d %H:%M}\n"
+        f"触发价: {signal.price:.2f}\n"
         f"触发/失效: {_fmt(signal.trigger_price)} / {_fmt(signal.invalid_price)}\n"
         f"置信度: {signal.confidence:.2f}\n"
         f"理由: {signal.reason}\n"
@@ -117,9 +115,9 @@ def format_news_events(events: list[NewsEvent], title: str = "期货新闻影响
         lines.extend(
             [
                 "",
-                f"{event.symbol} {direction} 置信度 {event.confidence:.2f} 影响 {event.impact_score:.2f}",
+                f"{event.symbol} {direction} 置信度{event.confidence:.2f} 影响{event.impact_score:.2f}",
                 f"标题: {event.title[:180]}",
-                f"周期: 约 {event.horizon_days} 天",
+                f"周期: 约{event.horizon_days}天",
                 f"相似/理由: {event.similar_events[:180] or event.raw.get('reason', '')}",
             ]
         )
@@ -145,7 +143,7 @@ def format_news_digest(events: list[NewsEvent], major_headlines: pd.DataFrame, t
             direction = {"bullish": "利多", "bearish": "利空", "neutral": "中性"}.get(event.direction, event.direction)
             reason = _shorten(event.similar_events or str(event.raw.get("reason", "")), 60)
             headline = _shorten(event.title, 54)
-            suffix = f"；{reason}" if reason else ""
+            suffix = f"（{reason}）" if reason else ""
             lines.append(f"- {event.symbol} {direction} 置信{event.confidence:.2f}/影响{event.impact_score:.2f}: {headline}{suffix}")
         if len(events) > 5:
             lines.append(f"- 另有 {len(events) - 5} 条影响已入库")

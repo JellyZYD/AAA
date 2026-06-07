@@ -61,6 +61,7 @@ class SignalPoller:
         if update_data and self.provider is not None:
             self.provider.update_recent(self.settings, self.store, timeframes=self._profile_timeframes(champions))
         events = self.store.read_events()
+        emitted_keys = self._existing_signal_keys()
         signals: list[Signal] = []
         for rank, symbol in enumerate(self.settings.symbols, 1):
             spec = self.settings.instruments[symbol]
@@ -87,6 +88,10 @@ class SignalPoller:
             action = recent[-1]
             selected = self._select_contract(spec)
             signal = self._to_signal(symbol, selected, action, best, rank)
+            signal_key = self._signal_key(signal)
+            if signal_key in emitted_keys:
+                continue
+            emitted_keys.add(signal_key)
             signals.append(signal)
         self.store.append_signals(signals)
         if self.alert_sender is not None:
@@ -138,6 +143,20 @@ class SignalPoller:
             return champions
         return {}
 
+    def _existing_signal_keys(self) -> set[tuple[str, str, str, str]]:
+        existing = self.store.read_signals()
+        if existing.empty:
+            return set()
+        keys: set[tuple[str, str, str, str]] = set()
+        for _, row in existing.iterrows():
+            timestamp = pd.Timestamp(row["timestamp"]).isoformat()
+            keys.add((str(row["symbol"]), str(row["action"]), timestamp, str(row.get("strategy_id") or "")))
+        return keys
+
+    def _signal_key(self, signal: Signal) -> tuple[str, str, str, str]:
+        timestamp = pd.Timestamp(signal.timestamp).isoformat()
+        return (signal.symbol, signal.action, timestamp, signal.strategy_id or "")
+
     def _profile_timeframes(self, champions: dict) -> tuple[str, ...]:
         timeframes: set[str] = set()
         for champion in champions.values():
@@ -157,6 +176,7 @@ class SignalPoller:
         risk = action.reason if action.action == "RISK_BLOCKED" else f"margin checked; contract selection: {selected.reason}"
         news_bias = action.details.get("news_bias", 0.0)
         news = "无明显事件" if abs(news_bias) < 0.05 else f"事件偏置 {news_bias:.2f}"
+        risk = f"{risk}; 信号基于已收完K线，人工下单必须按下一可成交价格重新核对"
         return Signal(
             symbol=symbol,
             contract=selected.contract,

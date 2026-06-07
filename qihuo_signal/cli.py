@@ -77,9 +77,10 @@ def main(argv: list[str] | None = None) -> int:
     refine_p.add_argument("--rolling-windows", type=int, default=4)
     refine_p.add_argument("--top-seeds-per-symbol", type=int, default=3)
 
-    wf_p = sub.add_parser("walk-forward", help="Run causal walk-forward validation from refined candidates")
+    wf_p = sub.add_parser("walk-forward", help="Run causal walk-forward validation from a static parameter grid")
     wf_p.add_argument("--folds", type=int, default=5)
-    wf_p.add_argument("--max-per-symbol", type=int, default=12)
+    wf_p.add_argument("--max-per-symbol", type=int, default=24)
+    wf_p.add_argument("--workers", type=int, default=6)
 
     term_p = sub.add_parser("fetch-term-structure", help="Fetch single-contract daily data and build local carry factors")
     term_p.add_argument("--symbol", action="append", help="Limit to one or more symbols")
@@ -280,6 +281,7 @@ def main(argv: list[str] | None = None) -> int:
             settings.reports_root,
             folds=args.folds,
             max_per_symbol=args.max_per_symbol,
+            workers=args.workers,
         )
         print(f"walk-forward report: {report_path}")
         print(f"walk-forward symbols: {len(summaries)}")

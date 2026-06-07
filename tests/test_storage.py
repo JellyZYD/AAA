@@ -7,6 +7,7 @@ import pandas as pd
 
 from qihuo_signal.config import load_settings
 from qihuo_signal.data_sources import SyntheticProvider
+from qihuo_signal.models import Signal
 from qihuo_signal.storage import LocalStore
 
 
@@ -44,6 +45,33 @@ class StorageTests(unittest.TestCase):
             loaded = store.read_bars("RB", "1d")
             self.assertIn("carry_signal", loaded.columns)
             self.assertEqual(float(loaded.iloc[0]["carry_signal"]), 0.03)
+
+    def test_append_signals_updates_duckdb_table(self) -> None:
+        try:
+            import duckdb
+        except Exception:
+            self.skipTest("duckdb not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            store = LocalStore(tmp)
+            signal = Signal(
+                symbol="RB",
+                contract="RB0",
+                timestamp=pd.Timestamp("2026-01-01 10:00").to_pydatetime(),
+                action="OPEN_LONG",
+                price=3300,
+                confidence=0.6,
+                trigger_price=3300,
+                invalid_price=3250,
+                reason="test",
+                news_evidence="none",
+                risk_check="ok",
+                strategy_rank=1,
+                strategy_id="test-strategy",
+            )
+            store.append_signals([signal])
+            with duckdb.connect(str(store.duckdb_path)) as con:
+                count = con.execute("SELECT count(*) FROM signals").fetchone()[0]
+            self.assertEqual(count, 1)
 
 
 if __name__ == "__main__":

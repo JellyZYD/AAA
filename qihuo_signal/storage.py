@@ -295,6 +295,12 @@ class LocalStore:
             import duckdb
         except Exception:
             return
+        try:
+            with duckdb.connect(str(self.duckdb_path)) as con:
+                con.register("replace_df", df)
+                con.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM replace_df")
+        except Exception:
+            return
 
     def _sync_term_structure_duckdb(self) -> None:
         try:
@@ -308,12 +314,6 @@ class LocalStore:
             with duckdb.connect(str(self.duckdb_path)) as con:
                 con.register("term_structure_df", df)
                 con.execute("CREATE OR REPLACE TABLE term_structure AS SELECT * FROM term_structure_df")
-        except Exception:
-            return
-        try:
-            with duckdb.connect(str(self.duckdb_path)) as con:
-                con.register("replace_df", df)
-                con.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM replace_df")
         except Exception:
             return
 
